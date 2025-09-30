@@ -1,7 +1,7 @@
 # COMMANDS
 
 All commands run from the repo root with Nx.
-Flyway configuration is read from `db/flyway.db.conf` (not committed).
+Flyway configuration is read from `database/flyway.db.conf` (not committed).
 Windows Authentication is required in the URL (e.g., `integratedSecurity=true`).
 
 ```powershell
@@ -13,11 +13,11 @@ nx run db:<target>
 ## Prerequisites
 
 - SQL Server is reachable over TCP on your fixed port.
-- `db/flyway.db.conf` exists locally, for example:
+- `database/flyway.db.conf` exists locally, for example:
 
   ```conf
   flyway.url=jdbc:sqlserver://localhost:2458;databaseName=WFG_ROBOT_SYSAPV;encrypt=true;trustServerCertificate=true;integratedSecurity=true
-  flyway.locations=filesystem:db/sql
+  flyway.locations=filesystem:database/sql
   ```
 
 ---
@@ -35,8 +35,8 @@ nx run db:prepare
 
 **What it does:**
 
-- Ensures `db/sql` exists.
-- If `db/flyway.db.conf` is missing, prints a message telling you to create it (based on your example).
+- Ensures `database/sql` exists.
+- If `database/flyway.db.conf` is missing, prints a message telling you to create it (based on your example).
 
 ---
 
@@ -51,7 +51,7 @@ nx run db:info
 
 **What it does:**
 
-- Connects using `db/flyway.db.conf`.
+- Connects using `database/flyway.db.conf`.
 - Prints pending/applied migrations and the schema history table status.
 
 **Use when:**
@@ -230,7 +230,7 @@ nx run db:clean
 
 ## Troubleshooting
 
-- **`Missing db/flyway.db.conf`**
+- **`Missing database/flyway.db.conf`**
   Create the file locally; it’s intentionally not in source control.
 
 - **Integrated auth errors**

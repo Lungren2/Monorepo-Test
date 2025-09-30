@@ -1,26 +1,342 @@
-@import "tailwindcss";
+@import 'tailwindcss';
 
-:root {
-  --background: #ffffff;
-  --foreground: #171717;
-}
+@plugin 'tailwindcss-animate';
 
-@theme inline {
-  --color-background: var(--background);
-  --color-foreground: var(--foreground);
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
-}
+@custom-variant dark (&:is(.dark *));
 
-@media (prefers-color-scheme: dark) {
-  :root {
-    --background: #0a0a0a;
-    --foreground: #ededed;
+@theme {
+  --color-border: hsl(var(--border));
+  --color-input: hsl(var(--input));
+  --color-ring: hsl(var(--ring));
+  --color-background: hsl(var(--background));
+  --color-foreground: hsl(var(--foreground));
+
+  --color-primary: hsl(var(--primary));
+  --color-primary-foreground: hsl(var(--primary-foreground));
+
+  --color-secondary: hsl(var(--secondary));
+  --color-secondary-foreground: hsl(var(--secondary-foreground));
+
+  --color-destructive: hsl(var(--destructive));
+  --color-destructive-foreground: hsl(var(--destructive-foreground));
+
+  --color-muted: hsl(var(--muted));
+  --color-muted-foreground: hsl(var(--muted-foreground));
+
+  --color-accent: hsl(var(--accent));
+  --color-accent-foreground: hsl(var(--accent-foreground));
+
+  --color-popover: hsl(var(--popover));
+  --color-popover-foreground: hsl(var(--popover-foreground));
+
+  --color-card: hsl(var(--card));
+  --color-card-foreground: hsl(var(--card-foreground));
+
+  --color-sidebar: hsl(var(--sidebar-background));
+  --color-sidebar-foreground: hsl(var(--sidebar-foreground));
+  --color-sidebar-primary: hsl(var(--sidebar-primary));
+  --color-sidebar-primary-foreground: hsl(var(--sidebar-primary-foreground));
+  --color-sidebar-accent: hsl(var(--sidebar-accent));
+  --color-sidebar-accent-foreground: hsl(var(--sidebar-accent-foreground));
+  --color-sidebar-border: hsl(var(--sidebar-border));
+  --color-sidebar-ring: hsl(var(--sidebar-ring));
+
+  /* Sidebar width variables */
+  --sidebar-width: 16rem;
+  --sidebar-width-icon: 3rem;
+  --sidebar-width-mobile: 18rem;
+
+  --radius-lg: var(--radius);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-sm: calc(var(--radius) - 4px);
+
+  --animate-accordion-down: accordion-down 0.2s ease-out;
+  --animate-accordion-up: accordion-up 0.2s ease-out;
+
+  @keyframes accordion-down {
+    from {
+      height: 0;
+    }
+    to {
+      height: var(--radix-accordion-content-height);
+    }
+  }
+  @keyframes accordion-up {
+    from {
+      height: var(--radix-accordion-content-height);
+    }
+    to {
+      height: 0;
+    }
   }
 }
 
-body {
-  background: var(--background);
-  color: var(--foreground);
-  font-family: Arial, Helvetica, sans-serif;
+@utility container {
+  margin-inline: auto;
+  padding-inline: 2rem;
+  @media (width >= --theme(--breakpoint-sm)) {
+    max-width: none;
+  }
+  @media (width >= 1400px) {
+    max-width: 1400px;
+  }
+}
+
+/*
+  The default border color has changed to `currentcolor` in Tailwind CSS v4,
+  so we've added these compatibility styles to make sure everything still
+  looks the same as it did with Tailwind CSS v3.
+
+  If we ever want to remove these styles, we need to add an explicit border
+  color utility to any element that depends on these defaults.
+*/
+@layer base {
+  *,
+  ::after,
+  ::before,
+  ::backdrop,
+  ::file-selector-button {
+    border-color: var(--color-gray-200, currentcolor);
+  }
+}
+
+/* Definition of the design system. All colors, gradients, fonts, etc should be defined here. 
+All colors MUST be HSL.
+*/
+
+@layer base {
+  :root {
+    --background: var(--wf-bg);
+    --foreground: var(--wf-fg);
+
+    --card: var(--wf-card);
+    --card-foreground: var(--wf-fg);
+
+    --popover: var(--wf-card);
+    --popover-foreground: var(--wf-fg);
+
+    --primary: var(--wf-green);
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: var(--wf-border);
+    --secondary-foreground: var(--wf-fg);
+
+    --muted: var(--wf-border);
+    --muted-foreground: var(--wf-muted);
+
+    --accent: var(--wf-border);
+    --accent-foreground: var(--wf-fg);
+
+    --destructive: var(--wf-red);
+    --destructive-foreground: 0 0% 100%;
+
+    --border: var(--wf-border);
+    --input: var(--wf-border);
+    --ring: var(--wf-ring);
+
+    --radius: 0.5rem;
+
+    --sidebar-background: var(--wf-card);
+    --sidebar-foreground: var(--wf-fg);
+    --sidebar-primary: var(--wf-green);
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: var(--wf-border);
+    --sidebar-accent-foreground: var(--wf-fg);
+    --sidebar-border: var(--wf-border);
+    --sidebar-ring: var(--wf-ring);
+    
+    /* Sidebar width variables */
+    --sidebar-width: 18rem;
+    --sidebar-width-icon: 4rem;
+  }
+
+  .dark {
+    --background: var(--wf-bg);
+    --foreground: var(--wf-fg);
+
+    --card: var(--wf-card);
+    --card-foreground: var(--wf-fg);
+
+    --popover: var(--wf-card);
+    --popover-foreground: var(--wf-fg);
+
+    --primary: var(--wf-green);
+    --primary-foreground: 0 0% 100%;
+
+    --secondary: var(--wf-border);
+    --secondary-foreground: var(--wf-fg);
+
+    --muted: var(--wf-border);
+    --muted-foreground: var(--wf-muted);
+
+    --accent: var(--wf-border);
+    --accent-foreground: var(--wf-fg);
+
+    --destructive: var(--wf-red);
+    --destructive-foreground: 0 0% 100%;
+
+    --border: var(--wf-border);
+    --input: var(--wf-border);
+    --ring: var(--wf-ring);
+    --sidebar-background: var(--wf-bg);
+    --sidebar-foreground: var(--wf-fg);
+    --sidebar-primary: var(--wf-green);
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: var(--wf-border);
+    --sidebar-accent-foreground: var(--wf-fg);
+    --sidebar-border: var(--wf-border);
+    --sidebar-ring: var(--wf-ring);
+    
+    /* Sidebar width variables */
+    --sidebar-width: 18rem;
+    --sidebar-width-icon: 4rem;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+
+  body {
+    @apply bg-background text-foreground;
+    font-family: 'Montserrat', system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', sans-serif;
+  }
+}
+
+/* WF Robot Design System tokens and utilities */
+@layer base {
+  :root {
+    /* Traffic Light Colors */
+    --wf-green: 145 85% 45%;
+    --wf-yellow: 45 100% 55%;
+    --wf-red: 0 95% 58%;
+
+    /* Foundation Colors */
+    --wf-bg: 49 51% 97%;
+    --wf-fg: 49 51% 3%;
+    --wf-muted: 0 0% 31%;
+    --wf-border: 0 0% 90%;
+    --wf-card: 49 51% 97%;
+    --wf-ring: 160 84% 39%;
+  }
+
+  .dark {
+    --wf-bg: 49 51% 3%;
+    --wf-fg: 49 51% 97%;
+    --wf-muted: 0 0% 65%;
+    --wf-border: 0 0% 18%;
+    --wf-card: 49 51% 4%
+    /* Traffic light colors remain vibrant in dark mode */
+  }
+}
+
+@layer utilities {
+  /* Typography */
+  .font-display { font-family: 'Oswald', 'Montserrat', sans-serif; font-weight: 600; letter-spacing: 0.025em; }
+  .heading-1 { font-family: 'Oswald', 'Montserrat', sans-serif; font-weight: 600; letter-spacing: 0.025em; font-size: 2.25rem; line-height: 2.5rem; }
+  .heading-2 { font-family: 'Oswald', 'Montserrat', sans-serif; font-weight: 600; letter-spacing: 0.025em; font-size: 1.875rem; line-height: 2.25rem; }
+  .heading-3 { font-family: 'Oswald', 'Montserrat', sans-serif; font-weight: 600; letter-spacing: 0.025em; font-size: 1.5rem; line-height: 2rem; }
+  .heading-4 { font-family: 'Oswald', 'Montserrat', sans-serif; font-weight: 600; letter-spacing: 0.025em; font-size: 1.25rem; line-height: 1.75rem; }
+  .text-body-lg { font-size: 1.125rem; line-height: 1.75rem; font-weight: 600; }
+  .text-body    { font-size: 1rem; line-height: 1.5rem; }
+  .text-body-sm { font-size: .875rem; line-height: 1.25rem; }
+  .text-body-xs { font-size: .75rem; line-height: 1rem; }
+
+  /* Semantic color utilities */
+  .text-wf-muted { color: hsl(var(--wf-muted)); }
+  .bg-wf-green { background-color: hsl(var(--wf-green)); }
+  .bg-wf-yellow { background-color: hsl(var(--wf-yellow)); }
+  .bg-wf-red { background-color: hsl(var(--wf-red)); }
+  .bg-wf-card { background-color: hsl(var(--wf-card)); }
+  .text-wf-fg { color: hsl(var(--wf-fg)); }
+  .bg-wf-bg { background-color: hsl(var(--wf-bg)); }
+  .border-wf-border { border-color: hsl(var(--wf-border)); }
+
+  /* Radius, elevation, focus ring */
+  .radius-xl { border-radius: 1rem; }
+  .radius-lg { border-radius: .75rem; }
+  .radius-md { border-radius: .5rem; }
+  .radius-sm { border-radius: .375rem; }
+  .elev-1 { box-shadow: 0 1px 2px rgba(0,0,0,.06), 0 1px 1px rgba(0,0,0,.04); }
+  .elev-2 { box-shadow: 0 6px 16px rgba(0,0,0,.08), 0 2px 6px rgba(0,0,0,.06); }
+  .elev-3 { box-shadow: 0 12px 24px rgba(0,0,0,.12), 0 6px 12px rgba(0,0,0,.08); }
+  .focus\:ring-wf:focus { box-shadow: 0 0 0 4px hsl(var(--wf-ring) / 0.2); outline: none; }
+  .wf-section { padding-block: 2rem; }
+}
+
+/* === WF Robot Icon (CSS-only) ============================================ */
+
+/* Base variables + defaults */
+.robot-icon {
+  /* Consumers can override these via inline style (CSS vars). */
+  --robot-frame: transparent;
+  --robot-frame-stroke: hsl(var(--wf-fg));
+  --robot-accent-1: hsl(var(--wf-red));
+  --robot-accent-2: hsl(var(--wf-green));
+  --robot-accent-3: hsl(var(--wf-yellow));
+  --robot-stroke-width: 32;
+  --robot-frame-fill: none; /* outline by default */
+}
+
+/* Surface presets: outline/solid/auto (no JS). */
+.robot-icon[data-surface="outline"] {
+  --robot-frame-fill: none;
+}
+.robot-icon[data-surface="solid"] {
+  --robot-frame-fill: hsl(var(--wf-fg));
+}
+/* Auto follows OS. Works with or without a .dark class strategy. */
+@media (prefers-color-scheme: light) {
+  .robot-icon[data-surface="auto"] { --robot-frame-fill: hsl(var(--wf-fg)); }
+}
+@media (prefers-color-scheme: dark) {
+  .robot-icon[data-surface="auto"] { --robot-frame-fill: none; }
+}
+
+/* Stroke/fill wiring */
+.robot-icon .frame {
+  fill: var(--robot-frame-fill);
+  stroke: var(--robot-frame-stroke);
+  stroke-miterlimit: 10;
+  stroke-width: var(--robot-stroke-width);
+}
+.robot-icon .accent-red    { fill: var(--robot-accent-1); }
+.robot-icon .accent-green  { fill: var(--robot-accent-2); }
+.robot-icon .accent-yellow { fill: var(--robot-accent-3); }
+
+@layer utilities {
+  /* Unified glow + accent opacity pulse */
+  @keyframes wf-glow-filter {
+    0% {
+      /* Glow off */
+      filter: drop-shadow(0 0 0 hsl(var(--glow-color) / 0));
+      opacity: 0.5; /* accent at 50% */
+    }
+    50% {
+      /* Glow max */
+      filter: drop-shadow(0 0 64px hsl(var(--glow-color) / 0.9));
+      opacity: 1; /* accent at 100% */
+    }
+    100% {
+      /* Back to off */
+      filter: drop-shadow(0 0 0 hsl(var(--glow-color) / 0));
+      opacity: 0.5; /* accent back to 50% */
+    }
+  }
+
+  .animate-glow-red    { --glow-color: var(--wf-red);    animation: wf-glow-filter 3s ease-in-out infinite; animation-delay: 0s;  will-change: filter, opacity; }
+  .animate-glow-yellow { --glow-color: var(--wf-yellow); animation: wf-glow-filter 3s ease-in-out infinite; animation-delay: 1s;  will-change: filter, opacity; }
+  .animate-glow-green  { --glow-color: var(--wf-green);  animation: wf-glow-filter 3s ease-in-out infinite; animation-delay: 2s;  will-change: filter, opacity; }
+
+  /* Respect reduced motion: freeze at full visibility, no glow */
+  @media (prefers-reduced-motion: reduce) {
+    .animate-glow-red,
+    .animate-glow-yellow,
+    .animate-glow-green {
+      animation: none !important;
+      filter: none !important;
+      opacity: 1 !important;
+    }
+  }
 }

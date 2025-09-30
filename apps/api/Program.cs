@@ -3,13 +3,9 @@
 using FastEndpoints;
 using FastEndpoints.Swagger;
 using Microsoft.AspNetCore.Diagnostics.HealthChecks;
-using Microsoft.AspNetCore.Authentication.JwtBearer;
-using Microsoft.IdentityModel.Tokens;
-using System.Security.Cryptography;
 using Serilog;
 using Serilog.Events;
 using Scalar.AspNetCore;
-using api.Services;
 
 namespace api;
 
