@@ -1,0 +1,82 @@
+{
+  "name": "Robot-APVSYS",
+  "version": "1.0.0",
+  "description": "Robot APVSYS Mono-repo with .NET API and Next.js Web App",
+  "main": "index.js",
+  "scripts": {
+    "prepare": "husky",
+    "dev": "concurrently \"pnpm dev:api\" \"pnpm dev:web\"",
+    "dev:api": "cd apps/api && dotnet run",
+    "dev:web": "cd apps/web && pnpm dev",
+    "build": "pnpm build:api && pnpm build:web",
+    "build:api": "cd apps/api && dotnet build",
+    "build:web": "cd apps/web && pnpm build",
+    "start": "concurrently \"pnpm start:api\" \"pnpm start:web\"",
+    "start:api": "cd apps/api && dotnet run --no-build",
+    "start:web": "cd apps/web && pnpm start",
+    "clean": "node scripts/dependency-manager.js clean",
+    "clean:api": "cd apps/api && dotnet clean && rmdir /s /q bin obj 2>nul || rm -rf bin obj",
+    "clean:web": "cd apps/web && rmdir /s /q .next node_modules 2>nul || rm -rf .next node_modules",
+    "restore": "pnpm install --recursive",
+    "restore:api": "cd apps/api && dotnet restore",
+    "restore:web": "cd apps/web && pnpm install",
+    "test": "pnpm test:api && pnpm test:web",
+    "test:api": "cd apps/api && dotnet test",
+    "test:web": "cd apps/web && pnpm test",
+    "lint": "pnpm lint:web",
+    "lint:web": "cd apps/web && pnpm lint",
+    "format": "pnpm format:api && pnpm format:web",
+    "format:api": "cd apps/api && dotnet format",
+    "format:web": "cd apps/web && pnpm lint --fix",
+    "watch": "concurrently \"pnpm watch:api\" \"pnpm watch:web\"",
+    "watch:api": "cd apps/api && dotnet watch run",
+    "watch:web": "cd apps/web && pnpm dev",
+    "publish:api": "cd apps/api && dotnet publish -c Release -o ./publish",
+    "publish:web": "cd apps/web && pnpm build && pnpm export",
+    "docker:build": "docker-compose build",
+    "docker:up": "docker-compose up",
+    "docker:down": "docker-compose down",
+    "workspace:list": "node scripts/workspace-manager.js list",
+    "workspace:add": "node scripts/workspace-manager.js add",
+    "workspace:remove": "node scripts/workspace-manager.js remove",
+    "install:all": "node scripts/dependency-manager.js install",
+    "install:clean": "node scripts/dependency-manager.js install:clean",
+    "update": "node scripts/dependency-manager.js update",
+    "outdated": "node scripts/dependency-manager.js outdated",
+    "audit": "node scripts/dependency-manager.js audit",
+    "add:package": "node scripts/package-manager.js add:node",
+    "add:nuget": "node scripts/package-manager.js add:nuget",
+    "remove:package": "node scripts/package-manager.js remove:node",
+    "remove:nuget": "node scripts/package-manager.js remove:nuget",
+    "packages:list": "node scripts/package-manager.js list",
+    "info": "echo 'Robot APVSYS Mono-repo' && echo 'Workspaces:' && pnpm workspace:list && echo '' && echo 'Dependencies:' && pnpm outdated"
+  },
+  "keywords": [
+    "monorepo",
+    "dotnet",
+    "nextjs",
+    "api",
+    "web"
+  ],
+  "author": "",
+  "license": "ISC",
+  "packageManager": "pnpm@10.12.4",
+  "devDependencies": {
+    "concurrently": "^8.2.2",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.2.10",
+    "prettier": "^3.4.2"
+  },
+  "lint-staged": {
+    "apps/web/**/*.{ts,tsx,js,jsx}": [
+      "cd apps/web && pnpm lint --fix",
+      "cd apps/web && pnpm build --dry-run"
+    ],
+    "apps/api/**/*.cs": [
+      "cd apps/api && dotnet format --include"
+    ],
+    "*.{json,md,yml,yaml}": [
+      "prettier --write"
+    ]
+  }
+}

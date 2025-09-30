@@ -1,0 +1,485 @@
+---
+globs: db/**,*.sql
+alwaysApply: false
+description: To be used whenever writing database or SQL code
+---
+
+# SQL Development Ruleset
+
+A unified set of standards and practices for SQL schema design, query writing, indexing, security, and operational management.
+
+This ruleset is intended for long-term maintainability, portability across engines, and minimization of performance and security risks.
+
+---
+
+## 1. Schema Design
+
+### 1.1 General Requirements
+
+* Every table must have a **primary key**.
+* Use **surrogate keys** (`AUTO_INCREMENT`, `IDENTITY`, `SERIAL`, `BIGSERIAL`, `UUID`) unless a **true natural key** exists.
+* Define all columns with explicit **NULL/NOT NULL** constraints.
+* Ensure **consistent use of data types** across the schema.
+
+### 1.2 Data Types
+
+* Use the **smallest appropriate data type** for the data (e.g., `SMALLINT` instead of `INT` when ranges permit).
+* Use `DECIMAL` or `NUMERIC` for financial data to avoid floating-point rounding issues.
+* Use `VARCHAR` with explicit maximum lengths rather than unbounded text types.
+* Use `DATE`, `TIME`, `TIMESTAMP` types instead of storing date/time as strings.
+* Use `BOOLEAN` or equivalent type instead of encoding true/false values as integers or characters.
+* Standardize to **ISO 8601** (`YYYY-MM-DD HH:MM:SS`) for datetime values.
+
+### 1.3 Normalization
+
+* Tables must be normalized to at least **Third Normal Form (3NF)**.
+* Denormalization may be used in analytical systems (OLAP, reporting, warehouses) only if documented and justified.
+
+### 1.4 Defaults and Constraints
+
+* Use `DEFAULT` values for frequently used constants (e.g., `created_at DEFAULT CURRENT_TIMESTAMP`).
+* Enforce business rules at the database layer with **CHECK constraints**.
+* Use **FOREIGN KEYS** to enforce referential integrity, with indexes on referencing columns.
+
+---
+
+## 2. Naming Conventions
+
+### 2.1 Tables
+
+* Use **snake\_case**, plural form.
+* Examples: `users`, `order_items`, `account_transactions`.
+
+### 2.2 Columns
+
+* Use **snake\_case** for column names.
+* Primary key should be prefixed with the table name (e.g., `user_id`, `order_id`).
+* Foreign keys should be named consistently with the referenced column (e.g., `user_id` referencing `users.user_id`).
+* Timestamps should be named consistently: `created_at`, `updated_at`, `deleted_at`.
+
+### 2.3 Avoid Reserved Words
+
+* Do not use reserved SQL keywords as identifiers (`user`, `group`, `order`).
+* If unavoidable, escape with backticks (MySQL), brackets (T-SQL), or quotes (PostgreSQL).
+
+---
+
+## 3. Indexing
+
+### 3.1 Principles
+
+* All primary keys and foreign keys must be indexed.
+* Index columns that are frequently used in search conditions, joins, or sort operations.
+* Avoid redundant indexes.
+* Avoid indexing low-cardinality columns (e.g., `is_active`).
+
+### 3.2 Index Design
+
+* Limit indexes to four or five per table unless justified.
+* Use composite indexes carefully; ensure they align with query access patterns.
+* In T-SQL, consider `INCLUDE` columns for covering indexes.
+* In PostgreSQL, use partial indexes for common predicates.
+* Avoid excessive indexing on high-write tables to reduce insert/update overhead.
+
+---
+
+## 4. Query Writing Standards
+
+### 4.1 Select Statements
+
+* Do not use `SELECT *` in production queries.
+* Explicitly list columns required.
+* Use aliases consistently, but avoid unnecessary abbreviations.
+
+### 4.2 Joins
+
+* Always use **ANSI JOIN syntax** (`INNER JOIN`, `LEFT JOIN`, etc.).
+* Do not use implicit joins via commas in the `FROM` clause.
+* Ensure all joins are explicit and contain `ON` conditions.
+
+### 4.3 Conditions
+
+* Always use parameterized values in application queries.
+* Prefer `COALESCE` for null handling, which is portable across engines.
+* Do not rely on engine-specific functions like `ISNULL` (T-SQL) or `IFNULL` (MySQL) unless strictly required.
+
+### 4.4 Ordering and Limiting
+
+* Always include `ORDER BY` when using `LIMIT`, `TOP`, or `FETCH`.
+* Do not assume implicit ordering without `ORDER BY`.
+
+### 4.5 Common Table Expressions
+
+* Use CTEs (`WITH ...`) for complex logic instead of deeply nested subqueries.
+* Ensure recursive CTEs have termination conditions to prevent runaway queries.
+
+---
+
+## 5. Transactions
+
+* Use explicit transactions for multi-step operations.
+* Do not mix DDL and DML in the same transaction.
+* Always `ROLLBACK` or `COMMIT` explicitly.
+* In T-SQL, use `SET XACT_ABORT ON` to ensure rollback on error.
+* In PostgreSQL, always check for errors when using `SAVEPOINT`.
+* Retrieve newly inserted keys with safe methods:
+
+  * T-SQL: `SCOPE_IDENTITY()` (not `@@IDENTITY`).
+  * PostgreSQL: `RETURNING`.
+  * MySQL: `LAST_INSERT_ID()`.
+
+---
+
+## 6. Views, Functions, and Stored Procedures
+
+* Views should abstract complexity and secure sensitive data.
+* Do not expose sensitive columns in views (e.g., passwords, SSNs).
+* In T-SQL, use `WITH SCHEMABINDING` for stability in indexed views.
+* Prefer **set-based logic** in stored procedures/functions over row-by-row iteration.
+* All stored procedures must have companion test scripts.
+* Error handling must be explicit (`TRY/CATCH` in T-SQL, `EXCEPTION` in PL/pgSQL).
+
+---
+
+## 7. Security
+
+* Follow the principle of **least privilege**.
+* Do not grant `ALL PRIVILEGES`.
+* Grant access at the schema or object level, not the database level.
+* Use roles to manage permissions.
+* Always use parameterized queries in applications to prevent SQL injection.
+* Do not construct SQL queries with string concatenation.
+* Mask or restrict access to sensitive data:
+
+  * Use column masking (SQL Server).
+  * Use row-level security (Postgres).
+  * Use views with restricted column lists.
+
+---
+
+## 8. Migration and Versioning
+
+* All schema changes must be applied via migration scripts.
+* Migrations must be version-controlled.
+* Migration scripts should be idempotent (safe to re-run).
+* Rollback scripts must be included where possible.
+* Never apply manual schema changes directly in production.
+
+---
+
+## 9. Portability and Standards
+
+* Prefer ANSI SQL syntax whenever possible.
+* Avoid vendor-specific features unless justified and documented.
+* If vendor-specific constructs are used, encapsulate them in views or stored procedures.
+* Use `UNION ALL` instead of `UNION` unless duplicate elimination is required.
+* Write queries assuming strict SQL modes (e.g., `ONLY_FULL_GROUP_BY` in MySQL).
+
+---
+
+## 10. Testing and Performance
+
+* All schema changes must be regression tested.
+* Use `EXPLAIN`, `EXPLAIN ANALYZE`, or equivalent to review execution plans for expensive queries.
+* Load testing is required for queries expected to run over datasets with more than one million rows.
+* Ensure stored routines and queries handle `NULL` values explicitly.
+* All ETL processes must be idempotent (safe to re-run without duplicate effects).
+
+---
+
+## 11. Logging and Monitoring
+
+* All critical queries should be monitored for performance degradation.
+* Enable slow query logs in MySQL.
+* Use SQL Server Query Store to monitor regressions.
+* In PostgreSQL, monitor with `pg_stat_statements`.
+* Periodically review execution plans for regressions after upgrades.
+
+---
+
+This ruleset is intended to serve as a comprehensive baseline for SQL development across major relational databases. It should be adapted as needed to specific organizational and platform requirements.
+
+---
+
+This addendum defines **what should live in the database** versus **what belongs in the business/application layer**, with a unified stance across PostgreSQL, SQL Server (T-SQL), and MySQL. It aims to reduce hidden side-effects, keep systems testable, and prevent vendor lock-in.
+
+## 1) Put These in the Database (Authoritative Data Responsibilities)
+
+These are **data-centric, invariant rules** that must hold regardless of who writes to the database.
+
+### 1.1 Referential & Structural Integrity
+
+* **Primary keys, foreign keys, unique constraints, check constraints.**
+* **NOT NULL** and data type enforcement.
+* Rationale: guarantees consistency independent of application code; prevents drift across services.
+
+### 1.2 Auditable System Columns (Minimal, Standardized)
+
+* `created_at`, `updated_at`, optional `deleted_at` for soft-delete.
+* Optionally `created_by`, `updated_by` (as **opaque identifiers**; do not embed auth logic).
+* Prefer **DB defaults** for timestamps (e.g., `CURRENT_TIMESTAMP`) to avoid clock skew.
+
+### 1.3 Data-Local Computations
+
+* **Computed/generated columns** that are pure functions of columns in the same row.
+* **Validation checks** that are data-local (e.g., `price >= 0`, `start_date <= end_date`).
+* Rationale: colocate simple, deterministic rules with the data; improves query plan quality.
+
+### 1.4 Canonical Identifiers
+
+* **Surrogate keys** (`IDENTITY`/`AUTO_INCREMENT`/`SERIAL`/`GENERATED ALWAYS AS IDENTITY`).
+* **Server-generated UUIDs** when required (avoid app-side collisions).
+
+### 1.5 Minimal, Predictable Triggers (If Any)
+
+* Only for **mechanical invariants** (e.g., maintain a denormalized counter, write-once immutable timestamp).
+* Triggers must be **idempotent**, **side-effect free outside the same row/table**, and **well-documented**.
+* Avoid cross-table/business decisions in triggers.
+
+### 1.6 Set-Based Transformations Close to Data
+
+* Bulk staging → dedup → merge (e.g., **upserts/merge** patterns).
+* ETL steps that are **purely relational** and **batchable** (e.g., `INSERT … SELECT`, `MERGE`, materialized views).
+* Rationale: moves heavy data motion to the engine for efficiency.
+
+### 1.7 Queryable Abstractions
+
+* **Views** for stable projections and to hide sensitive columns.
+* **Materialized views** (Postgres) or **indexed views** (T-SQL) for *query-only* acceleration where justified.
+
+---
+
+## 2) Avoid in the Database (Keep in Business Layer)
+
+These are **workflow, policy, or integration concerns** that change frequently, require domain context, or span systems.
+
+### 2.1 Orchestration & Workflows
+
+* Multi-step business processes, retries, compensations, sagas.
+* Long-running or asynchronous operations (email, billing, external calls).
+* Rationale: DB transactions are not workflow engines; keep transaction scope short.
+
+### 2.2 Authorization & Policy
+
+* Role/permission evaluation, ABAC/RBAC policy logic, feature flags, tenancy rules beyond **basic row filtering**.
+* DB can enforce **row-level security (RLS)** or views when necessary, but **policy evaluation** and **auditing decisions** belong in the app.
+
+### 2.3 Validation Needing External Context
+
+* Cross-service checks (inventory in external system, credit checks, entitlement lookups).
+* Anything requiring **network I/O** or **non-deterministic data**.
+
+### 2.4 Formatting, Localization, and API Shaping
+
+* Currency formatting, locale transforms, DTO assembly, pagination tokens.
+* DB should return raw, typed values; the app shapes them for clients.
+
+### 2.5 Business Calculations with Volatile Rules
+
+* Pricing engines, tax logic, discount/promotion frameworks.
+* Policy that changes often or is A/B tested.
+
+### 2.6 Error Handling, Telemetry, and Observability
+
+* Centralized logging, tracing, metrics, alerting.
+* DB logs can be **ingested**, but orchestration/alert routing is application/infra territory.
+
+### 2.7 Caching & Rate Limiting
+
+* Distributed caches, TTLs, throttling strategies.
+* The DB is the **source of truth**, not the cache manager.
+
+### 2.8 File/Blob Lifecycle, Search, and Messaging
+
+* Object storage workflows, signed URLs, antivirus scanning.
+* Full-text search at scale (use external engines unless a small, contained use case fits native FTS).
+* Message queue orchestration (outbox pattern uses DB **storage**, but **publishing logic** is app-side).
+
+---
+
+## 3) “It Depends” (Case-by-Case, with Guardrails)
+
+### 3.1 Stored Procedures / Functions
+
+* **Good fit**: tightly data-bound operations, set-based batch logic, encapsulating complex queries, permission boundaries (execute rights without table rights).
+* **Poor fit**: cross-service workflows, volatile business rules, network calls (e.g., SQL CLR, `http` extensions) — avoid.
+* **Standards**:
+
+  * No external I/O.
+  * Deterministic, set-based, **short-running**.
+  * **Versioned and tested**; inputs validated; no hidden side-effects.
+
+### 3.2 Triggers
+
+* **Prefer constraints** over triggers.
+* If used, keep to **row-local invariants**, avoid recursion, and document ordering.
+* Never call external services or enqueue messages directly; if needed, write to an **outbox table** and let the **app publisher** handle delivery.
+
+### 3.3 Full-Text Search
+
+* **Native FTS** (Postgres `tsvector`, SQL Server FTS, MySQL InnoDB FTS) is OK for modest scope and operational simplicity.
+* Use **external search** (Elasticsearch/OpenSearch) for multi-language relevance, fuzzy matching, aggregations, and high QPS.
+* Keep **search indexing** async via outbox/CDC, not synchronous in triggers.
+
+### 3.4 Analytical Acceleration
+
+* Materialized views / indexed views for **stable** aggregates where you control refresh windows.
+* Avoid trigger-driven “real-time” maintenance unless volumes are low; prefer batch refresh (e.g., nightly, or incremental with change tables).
+
+---
+
+## 4) Anti-Patterns to Ban from the Database
+
+* **Business logic in triggers** that updates multiple tables with conditional rules.
+* **Hidden writes** in scalar/table functions used within ordinary `SELECT` statements.
+* **External network calls** from the DB process (HTTP/CLR extensions): non-portable, risky, hard to observe.
+* **Long-running transactions** holding locks across user interactions.
+* \*\*SELECT \*\` in procedures/views feeding APIs (schema drift, overfetch, plan instability).
+* **Application-driven referential integrity** (FKs disabled “for performance”).
+* **Storing secrets in plaintext**; do not DIY crypto in SQL.
+* **Using the DB as a job scheduler** (except lightweight, engine-native schedulers for DB-only maintenance).
+
+---
+
+## 5) Cross-Cutting Patterns (How to Split Concerns Safely)
+
+### 5.1 Transaction Boundary Pattern
+
+* Keep DB transactions **short** and **set-based**.
+* Workflow: *Validate in app → Begin TX → Write authoritative rows → Commit → Publish events async*.
+
+### 5.2 Outbox Pattern (Recommended)
+
+* DB writes event rows to an **outbox table** in the same transaction as state changes.
+* A separate app service reads the outbox and publishes to the message bus with retries and idempotency.
+* Avoid direct publish from triggers/procs.
+
+### 5.3 Idempotency & Concurrency
+
+* Use **unique keys** or **idempotency keys** on commands (e.g., `client_request_id`).
+* Prefer **optimistic concurrency** (version/timestamp columns) with compare-and-swap updates.
+* Avoid pessimistic locking across remote calls.
+
+### 5.4 Multi-Tenancy
+
+* **Row-level**: tenant column + composite unique keys + RLS (Postgres) or secure views.
+* **Schema-per-tenant**: only for strict isolation and low tenant counts.
+* Centralized policy enforcement stays in the **app**, with DB providing structural isolation and filters.
+
+### 5.5 Soft Deletes
+
+* Use `deleted_at` and **filtered unique indexes** (where supported) to maintain uniqueness among active rows.
+* The **app** decides archival/retention; DB enforces the column and read filters (via views/RLS if needed).
+
+---
+
+## 6) Engine-Specific Notes (Kept Minimal & Portable)
+
+* **PostgreSQL**
+
+  * Prefer `GENERATED … AS IDENTITY` over legacy `SERIAL`.
+  * Use **RLS** sparingly and test thoroughly; keep business policy in the app.
+  * `EXCLUDE` constraints (with gist) are powerful for scheduling/time-range conflicts (good DB responsibility).
+
+* **SQL Server**
+
+  * Use `SCOPE_IDENTITY()` (not `@@IDENTITY`).
+  * Indexed views require `SCHEMABINDING` and strict determinism — good for stable aggregates, not for volatile metrics.
+  * Avoid CLR for business logic; keep .NET logic in services.
+
+* **MySQL**
+
+  * Avoid trigger-heavy designs; triggers are limited and harder to reason about.
+  * Enforce **`ONLY_FULL_GROUP_BY`** semantics in development/test.
+  * Always use `ORDER BY` with `LIMIT`; rely on **FKs** (InnoDB) and explicit constraints, not app checks.
+
+---
+
+## 7) Decision Matrix (Quick Reference)
+
+| Concern                                    | Database                  | Business Layer                         |
+| ------------------------------------------ | ------------------------- | -------------------------------------- |
+| Primary/foreign/unique/check constraints   | **Yes**                   | No                                     |
+| Data types, nullability, defaults          | **Yes**                   | No                                     |
+| Row-local computed values                  | **Yes**                   | Optional                               |
+| Permissions (object-level GRANTs)          | **Yes (baseline)**        | **Yes (policy and roles)**             |
+| Row-level security / filtered views        | Maybe (defense in depth)  | **Yes (policy evaluation)**            |
+| Formatting (currency, locale, DTOs)        | No                        | **Yes**                                |
+| Multi-step workflows / external calls      | No                        | **Yes**                                |
+| Caching, rate limiting                     | No                        | **Yes**                                |
+| Search at scale / relevance tuning         | Maybe (small)             | **Yes (external engines)**             |
+| Event publishing                           | No (store in outbox only) | **Yes**                                |
+| Long-running operations                    | No                        | **Yes**                                |
+| Analytics acceleration (MVs/indexed views) | Maybe (stable aggregates) | Yes (orchestration of refresh & usage) |
+| Business rule engines / A/B tests          | No                        | **Yes**                                |
+
+---
+
+## 8) Implementation Checklist for Teams
+
+1. **Schema**: FKs, UNIQUE, CHECKs defined; data types minimal and explicit.
+2. **Projections**: Views for API queries; no `SELECT *`.
+3. **Procedures**: Data-bound, deterministic, short; no external I/O; tests included.
+4. **Triggers**: Avoid; if used, row-local only; fully documented.
+5. **Transactions**: Short, set-based; no DDL+DML mixing; clear isolation choice.
+6. **Outbox**: In place for domain events; publisher service operational.
+7. **Security**: Least privilege; secrets external to DB; sensitive columns hidden.
+8. **Performance**: Explain plans reviewed; slow query logging/Query Store/pg\_stat\_statements enabled.
+9. **Migrations**: Versioned, idempotent, peer-reviewed, with rollback notes.
+10. **Portability**: ANSI first; vendor features encapsulated; engine notes documented.
+
+---
+
+## 9) Example Split (Concise)
+
+**In DB**
+
+```sql
+-- Structural integrity
+CREATE TABLE orders (
+  order_id      BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+  account_id    BIGINT NOT NULL REFERENCES accounts(account_id),
+  status        TEXT   NOT NULL CHECK (status IN ('pending','paid','cancelled')),
+  total_amount  NUMERIC(12,2) NOT NULL CHECK (total_amount >= 0),
+  created_at    TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Stable projection
+CREATE VIEW api.orders_v1 AS
+SELECT order_id, account_id, status, total_amount, created_at
+FROM orders
+WHERE status <> 'cancelled';
+```
+
+**In Business Layer (pseudocode)**
+
+```python
+# Validate promo, tax, inventory via external services
+validate_pricing(order_request)
+
+# Transaction boundary
+with db.transaction():
+    order_id = db.exec("""
+        INSERT INTO orders (account_id, status, total_amount)
+        VALUES (:acct, 'pending', :amount)
+        RETURNING order_id
+    """, params).scalar()
+
+    # Write event to outbox synchronously
+    db.exec("""
+        INSERT INTO outbox (aggregate_id, type, payload)
+        VALUES (:order_id, 'OrderCreated', :json_payload)
+    """, {"order_id": order_id, "json_payload": payload})
+
+# Publish event asynchronously (retry, idempotent)
+publisher.publish_from_outbox()
+```
+
+---
+
+### Bottom Line
+
+* **Database**: the **guardian of truth** — enforce invariants, types, constraints, and efficient set-based data operations.
+* **Business Layer**: the **owner of behavior** — workflows, policies, integrations, presentation, and observability.
+
+Adhering to this split keeps logic discoverable, testable, and portable while leveraging the database for what it does best.

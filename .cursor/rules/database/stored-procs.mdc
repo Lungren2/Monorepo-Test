@@ -1,0 +1,463 @@
+---
+globs: *.sql
+alwaysApply: false
+description: If creating a stored procedure
+---
+
+# Stored Procedures for CRUD — Best Practices (Unified)
+
+## 1) API surface & naming
+
+* **One proc per operation** per entity is the default:
+
+  * `app.<entity>_create`
+  * `app.<entity>_read_by_id`
+  * `app.<entity>_read` (paged/filterable list)
+  * `app.<entity>_update`
+  * `app.<entity>_delete` (soft delete by default)
+* Prefer **schema-qualified** names (e.g., `app.`) and **singular entity** names (`order`, `customer`).
+* Optional: an **upsert** proc (`app.<entity>_upsert`) only if required by integration semantics; otherwise keep C and U separate.
+* Versioning: suffix with `_v2` only on **breaking changes**; keep latest as a stable alias (view or wrapper).
+
+## 2) Input parameters
+
+* One parameter per column you intend to allow the caller to set.
+* For **partial updates**, either:
+
+  * Provide a separate `*_patch` proc with nullable parameters and coalesce to existing values, or
+  * Accept a JSON payload (engine-specific) and validate keys.
+* Enforce **type fidelity** (decimal for money, boolean for flags, bounded varchar lengths).
+* Reject unknown enum values early via **CHECK logic** inside the proc.
+
+## 3) Output contract
+
+* **Create**: return the new primary key, plus the row (after defaults/computed columns applied).
+* **Read**: deterministic **ORDER BY**; support paging (`offset + limit` or `keyset`).
+* **Update/Delete**: return **rows\_affected** and the updated row when practical.
+* Prefer **result sets** over string-encoded payloads; use JSON only when you must return variable shapes.
+
+## 4) Transactions & concurrency
+
+* Each proc controls its own **short, atomic transaction**.
+* **Create/Update/Delete**: wrap DML in a transaction; fail fast, no long-running work.
+* Concurrency control:
+
+  * **Optimistic**: include a `row_version` (timestamp/xmin/rowversion) parameter on update/delete; predicate must match.
+  * **Idempotency** (optional): accept a `request_id` and enforce a unique key to avoid duplicate effects.
+
+## 5) Error handling
+
+* Validate inputs before DML; raise precise, **domain-specific errors**.
+* Fail **all-or-nothing**; don’t commit partial states.
+* Emit a **single, predictable** error shape (code + message).
+* Never swallow errors; rethrow after adding context.
+
+## 6) Security
+
+* Grant callers **EXECUTE** on procs; deny direct table DML if you want a “proc-only” write boundary.
+* Contain business decisions **outside** the database; procedures enforce **data invariants** only.
+* Use **parameterized dynamic SQL** only when necessary (search/sort); whitelist sortable columns.
+* Use **ownership chaining** / **SECURITY DEFINER** carefully; avoid privilege escalation paths.
+
+## 7) Behavior limits
+
+* **No external I/O** (HTTP, file system, email) from procs.
+* **No long-running loops**; keep set-based and bounded.
+* **No hidden side-effects** across unrelated tables (beyond referentially needed changes).
+* Prefer **constraints** over trigger logic; procs should not replicate constraints.
+
+## 8) Paging & filtering
+
+* Expose **deterministic paging**:
+
+  * Offset/limit with **mandatory ORDER BY** (stable key).
+  * Or **keyset pagination** (`WHERE (k, id) > (:k, :id)` ORDER BY k, id).
+* Limit sort columns to an allow-list; default sort stable and indexed.
+
+## 9) Soft delete & lifecycle
+
+* Default **soft delete**: set `deleted_at`.
+* Unique constraints should be compatible (filtered/partial indexes where supported).
+* Provide `*_undelete` if business requires restoration.
+
+## 10) Auditing
+
+* The proc accepts `actor_id` (opaque identifier); the DB does **not** implement auth.
+* Write `created_by/updated_by` and timestamps inside the same transaction as DML.
+* Heavy audit/event publishing is via **outbox table**; do not publish to a bus from the proc.
+
+## 11) Testing & performance
+
+* Provide a **repeatable test harness** per proc (happy path + invalid inputs + concurrency conflict).
+* Review execution plans; ensure **covering indexes** exist for predicates and sorts.
+* `SELECT *` is banned in procs; list columns explicitly.
+* Keep **result sets narrow**; separate “details” vs “list” procs.
+
+---
+
+# Minimal CRUD Procedure Templates (by engine)
+
+> Adjust schema/column names to your project conventions. These show the *shape* and guardrails.
+
+## A) T-SQL (SQL Server)
+
+```sql
+-- Create
+CREATE OR ALTER PROCEDURE app.customer_create
+  @name        nvarchar(200),
+  @email       nvarchar(320),
+  @actor_id    bigint
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SET XACT_ABORT ON;
+  BEGIN TRAN;
+
+  INSERT INTO app.customers (name, email, created_by)
+  VALUES (@name, @email, @actor_id);
+
+  DECLARE @id bigint = SCOPE_IDENTITY();
+
+  SELECT c.customer_id, c.name, c.email, c.created_at, c.created_by
+  FROM app.customers AS c
+  WHERE c.customer_id = @id;
+
+  COMMIT;
+END
+GO
+
+-- Read (paged list; offset/limit)
+CREATE OR ALTER PROCEDURE app.customer_read
+  @search     nvarchar(200) = NULL,
+  @offset     int = 0,
+  @limit      int = 50
+AS
+BEGIN
+  SET NOCOUNT ON;
+
+  WITH base AS (
+    SELECT c.customer_id, c.name, c.email, c.created_at
+    FROM app.customers AS c
+    WHERE c.deleted_at IS NULL
+      AND (@search IS NULL OR c.name LIKE @search + N'%')
+  )
+  SELECT *
+  FROM base
+  ORDER BY created_at DESC, customer_id DESC
+  OFFSET @offset ROWS FETCH NEXT @limit ROWS ONLY;
+END
+GO
+
+-- Update with optimistic concurrency (rowversion)
+CREATE OR ALTER PROCEDURE app.customer_update
+  @customer_id  bigint,
+  @name         nvarchar(200) = NULL,
+  @email        nvarchar(320) = NULL,
+  @row_version  rowversion,
+  @actor_id     bigint
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SET XACT_ABORT ON;
+  BEGIN TRAN;
+
+  UPDATE c
+    SET name        = COALESCE(@name, c.name),
+        email       = COALESCE(@email, c.email),
+        updated_at  = SYSUTCDATETIME(),
+        updated_by  = @actor_id
+  FROM app.customers AS c
+  WHERE c.customer_id = @customer_id
+    AND c.row_version = @row_version;
+
+  IF @@ROWCOUNT = 0
+  BEGIN
+    ROLLBACK;
+    THROW 51000, 'Concurrency conflict or not found.', 1;
+  END
+
+  SELECT c.customer_id, c.name, c.email, c.updated_at, c.row_version
+  FROM app.customers AS c
+  WHERE c.customer_id = @customer_id;
+
+  COMMIT;
+END
+GO
+
+-- Soft delete
+CREATE OR ALTER PROCEDURE app.customer_delete
+  @customer_id bigint,
+  @row_version rowversion,
+  @actor_id    bigint
+AS
+BEGIN
+  SET NOCOUNT ON;
+  SET XACT_ABORT ON;
+  BEGIN TRAN;
+
+  UPDATE c
+    SET deleted_at = SYSUTCDATETIME(),
+        updated_by = @actor_id
+  FROM app.customers AS c
+  WHERE c.customer_id = @customer_id
+    AND c.row_version = @row_version;
+
+  IF @@ROWCOUNT = 0
+  BEGIN
+    ROLLBACK;
+    THROW 51001, 'Concurrency conflict or not found.', 1;
+  END
+
+  COMMIT;
+END
+GO
+```
+
+## B) PostgreSQL
+
+```sql
+-- Create (function returning the created row)
+CREATE OR REPLACE FUNCTION app.customer_create(
+  p_name   text,
+  p_email  text,
+  p_actor  bigint
+) RETURNS app.customers LANGUAGE plpgsql AS $$
+DECLARE v_row app.customers;
+BEGIN
+  INSERT INTO app.customers (name, email, created_by)
+  VALUES (p_name, p_email, p_actor)
+  RETURNING * INTO v_row;
+
+  RETURN v_row;
+END $$;
+
+-- Read (paged list) - use stable, indexed ORDER BY
+CREATE OR REPLACE FUNCTION app.customer_read(
+  p_search text DEFAULT NULL,
+  p_offset int  DEFAULT 0,
+  p_limit  int  DEFAULT 50
+) RETURNS SETOF app.customers LANGUAGE sql STABLE AS $$
+  SELECT *
+  FROM app.customers c
+  WHERE c.deleted_at IS NULL
+    AND (p_search IS NULL OR c.name ILIKE p_search || '%')
+  ORDER BY c.created_at DESC, c.customer_id DESC
+  OFFSET p_offset LIMIT p_limit;
+$$;
+
+-- Update with optimistic concurrency using xmin
+CREATE OR REPLACE FUNCTION app.customer_update(
+  p_id      bigint,
+  p_name    text,
+  p_email   text,
+  p_xmin    xid,
+  p_actor   bigint
+) RETURNS app.customers LANGUAGE plpgsql AS $$
+DECLARE v_row app.customers;
+BEGIN
+  UPDATE app.customers c
+     SET name       = COALESCE(p_name, c.name),
+         email      = COALESCE(p_email, c.email),
+         updated_at = now(),
+         updated_by = p_actor
+   WHERE c.customer_id = p_id
+     AND c.xmin = p_xmin
+  RETURNING * INTO v_row;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Concurrency conflict or not found' USING ERRCODE = '40001';
+  END IF;
+
+  RETURN v_row;
+END $$;
+
+-- Soft delete
+CREATE OR REPLACE FUNCTION app.customer_delete(
+  p_id    bigint,
+  p_xmin  xid,
+  p_actor bigint
+) RETURNS void LANGUAGE plpgsql AS $$
+BEGIN
+  UPDATE app.customers c
+     SET deleted_at = now(),
+         updated_by = p_actor
+   WHERE c.customer_id = p_id
+     AND c.xmin = p_xmin;
+
+  IF NOT FOUND THEN
+    RAISE EXCEPTION 'Concurrency conflict or not found' USING ERRCODE = '40001';
+  END IF;
+END $$;
+```
+
+## C) MySQL (InnoDB)
+
+```sql
+-- Create
+DELIMITER $$
+CREATE PROCEDURE app_customer_create(
+  IN p_name  VARCHAR(200),
+  IN p_email VARCHAR(320),
+  IN p_actor BIGINT
+)
+BEGIN
+  START TRANSACTION;
+  INSERT INTO app_customers (name, email, created_by)
+  VALUES (p_name, p_email, p_actor);
+  SELECT * FROM app_customers WHERE customer_id = LAST_INSERT_ID();
+  COMMIT;
+END$$
+DELIMITER ;
+
+-- Read (paged list; requires explicit ORDER BY)
+DELIMITER $$
+CREATE PROCEDURE app_customer_read(
+  IN p_search VARCHAR(200),
+  IN p_offset INT,
+  IN p_limit  INT
+)
+BEGIN
+  SELECT customer_id, name, email, created_at
+  FROM app_customers
+  WHERE deleted_at IS NULL
+    AND (p_search IS NULL OR name LIKE CONCAT(p_search, '%'))
+  ORDER BY created_at DESC, customer_id DESC
+  LIMIT p_offset, p_limit;
+END$$
+DELIMITER ;
+
+-- Update with optimistic concurrency using a version column
+DELIMITER $$
+CREATE PROCEDURE app_customer_update(
+  IN p_id         BIGINT,
+  IN p_name       VARCHAR(200),
+  IN p_email      VARCHAR(320),
+  IN p_version    BIGINT,
+  IN p_actor      BIGINT
+)
+BEGIN
+  START TRANSACTION;
+  UPDATE app_customers
+     SET name       = COALESCE(p_name, name),
+         email      = COALESCE(p_email, email),
+         updated_at = NOW(),
+         updated_by = p_actor,
+         version    = version + 1
+   WHERE customer_id = p_id
+     AND version = p_version;
+
+  IF ROW_COUNT() = 0 THEN
+    ROLLBACK;
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Concurrency conflict or not found';
+  END IF;
+
+  SELECT customer_id, name, email, updated_at, version
+  FROM app_customers
+  WHERE customer_id = p_id;
+
+  COMMIT;
+END$$
+DELIMITER ;
+
+-- Soft delete
+DELIMITER $$
+CREATE PROCEDURE app_customer_delete(
+  IN p_id      BIGINT,
+  IN p_version BIGINT,
+  IN p_actor   BIGINT
+)
+BEGIN
+  START TRANSACTION;
+  UPDATE app_customers
+     SET deleted_at = NOW(),
+         updated_by = p_actor,
+         version    = version + 1
+   WHERE customer_id = p_id
+     AND version = p_version;
+
+  IF ROW_COUNT() = 0 THEN
+    ROLLBACK;
+    SIGNAL SQLSTATE '45000' SET MESSAGE_TEXT = 'Concurrency conflict or not found';
+  END IF;
+
+  COMMIT;
+END$$
+DELIMITER ;
+```
+
+---
+
+## Anti-patterns to avoid
+
+* Procedures that return **variable, undocumented shapes** per branch.
+* **SELECT \*** in any API proc.
+* Procs that **call external services** or implement volatile business rules.
+* Hidden writes via **triggers** invoked by CRUD procs.
+* **Table-valued parameters** used as ad hoc schemas without validation (prefer validated temp/staging tables).
+* “Upsert everything” procs with implicit inserts on missing parents (let FKs fail or validate first).
+
+---
+
+Here’s the rationale you’ll hear from architects who mandate **soft-deletes only**—even when they don’t expose an “undo/undelete” feature to end-users.
+
+## Why soft-delete without an undo still makes sense
+
+1. **Regulatory retention & legal holds**
+   Many orgs must retain records for years (finance, healthcare, employment). Soft-deletes allow application-level “removal” while preserving data for audits, eDiscovery, and legal holds. “Undo” is irrelevant to this requirement; the value is retained evidence and provable lineage.
+
+2. **Forensics & incident response**
+   When something goes wrong (breach, fraud, bad import, compromised account), investigators need to reconstruct who did what, when, and to which row. A tombstone (`deleted_at`, `deleted_by`) is far more useful than a gap in the table plus a hope that backups exist and line up with all related changes.
+
+3. **Operational safety net (admin-level restores)**
+   Even without a user-facing “undelete,” ops can selectively resurrect rows from tombstones (or compare against CDC/temporal logs) during incidents. That workflow is usually **admin-only**, not an end-user feature, which is why you don’t see “undo” in the product.
+
+4. **Historical correctness for analytics**
+   BI needs to know that an entity existed and later ceased to exist, not just that it vanished. Soft-deletes keep facts joinable for historical reporting, cohort analysis, churn modeling, and reproducible dashboards.
+
+5. **Avoid destructive cascades**
+   Hard deletes across deep FK trees are risky (partial failures, lock bloat, dangling references in external systems). Soft-deletes let you “turn off” objects safely while coordinating downstream systems asynchronously (outbox/CDC to search, caches, billing, etc.).
+
+6. **Graceful lifecycle & retention policies**
+   Soft-delete supports staged cleanup:
+
+   * T0: mark as deleted (hidden from UX/APIs)
+   * T+N days: archive/export
+   * T+M days: hard-purge (policy-driven, batched, off-peak)
+     This separates **logical removal** from **physical destruction**, which is easier to operate at scale.
+
+7. **Security & least surprise for consumers**
+   APIs can treat “deleted” as absent while the database keeps the record for internal use. That reduces accidental data loss from bugs/misuse and enables reversible operational paths without exposing an end-user “undo” button.
+
+8. **Compatibility with event sourcing / CDC**
+   Many data platforms treat delete as a state transition, not a terminal event. A tombstone is the canonical way to model “not active” without breaking stream processors and materialized views.
+
+## …and the trade-offs they accept
+
+* **Storage & index bloat** if purging never happens. Mitigate with periodic archival/hard-purge jobs, partitioning, and “active-only” partial/filtered indexes.
+* **Uniqueness semantics**: you’ll often need **filtered unique indexes** (or composite keys including `deleted_at`) so a deleted row doesn’t block recreating the same business key.
+* **Query hygiene**: every read must filter `deleted_at IS NULL` (enforce via views, row-level security, or ORM scopes).
+* **Privacy laws**: when the legal basis requires **erasure** (e.g., GDPR’s right to be forgotten) you must physically purge or irreversibly anonymize—soft-delete alone is insufficient.
+
+## When soft-delete-only is the right default
+
+* You have audit/retention obligations or frequent forensic needs.
+* Your domain depends on historical analytics or reproducibility.
+* You integrate with multiple downstream systems that need orderly deactivation before destruction.
+* Your platform teams want a uniform safety net across services (fewer catastrophic deletes).
+
+## When you shouldn’t rely on soft-delete alone
+
+* Data subject erasure is mandatory (PII with strict retention windows): implement **timely hard-purge or anonymization**.
+* Extremely high-churn tables where storage pressure or index selectivity makes tombstones too costly: consider **archive tables + purge**.
+* Domains where “deleted” must be unrecoverable for policy reasons (e.g., certain security logs).
+
+## Implementation guidelines (to keep it sane)
+
+* Columns: `deleted_at TIMESTAMP NULL`, `deleted_by <principal> NULL`.
+* **Filtered/partial unique indexes** on “active” rows (e.g., SQL Server filtered index, Postgres partial index, MySQL composite key including `deleted_at`).
+* **Read paths** go through views or ORM scopes that automatically exclude deleted rows.
+* **Policies**: define retention windows and schedule archival + hard-purge; don’t let tombstones accumulate forever.
+* **Auditing**: record `created_by/updated_by/deleted_by`; use CDC/temporal tables where available.
+* **APIs**: treat soft-deleted as non-existent; only platform operators have restore workflows.
+
+**Bottom line:** Soft-delete without a public “undo” isn’t about user convenience; it’s about **risk management, compliance, and operational control**. It preserves history and safety while giving the platform time and mechanisms to destroy data correctly—on policy and without collateral damage.

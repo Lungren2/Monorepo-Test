@@ -1,0 +1,27 @@
+{
+  "rules": {
+    "api": {
+      "enabled": true,
+      "globs": ["apps/api/**/*.cs"]
+    },
+    "fe": {
+      "enabled": true,
+      "globs": ["apps/web/**/*.{ts,tsx}"]
+    },
+    "db": {
+      "enabled": true,
+      "globs": ["db/**/*.sql", "**/*.sql"]
+    }
+  },
+  "context": {
+    "projectType": "monorepo",
+    "technologies": [
+      ".NET 9",
+      "Next.js 15",
+      "TypeScript",
+      "Tailwind v4",
+      "pnpm"
+    ],
+    "architecture": "API + Frontend"
+  }
+}

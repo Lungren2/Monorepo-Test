@@ -1,0 +1,469 @@
+---
+globs: apps/web/**,src/**,app/**
+alwaysApply: false
+---
+
+## Purpose
+
+Build a production-grade Next.js **App Router** application that leans on **React Server Components (RSC)** by default, with client-side interactivity where it adds real value. Use **Tailwind v4**, **shadcn/ui** (Radix-based), **Zod + React Hook Form**, **TanStack Query** for client-side server-state, **Zustand** for local UI state, **Recharts** for charts, **TanStack Table** for data grids, **sonner** for toasts, and **next-themes** for theming.
+
+## Non‑negotiables
+
+* Prefer **Server Components**. Add `"use client"` only where hooks, browser APIs, or interactivity are required.
+* Validate all external inputs with **Zod** on both client and server.
+* Keep client bundles small: split interactive islands, avoid overusing global providers.
+* Accessibility: keyboard support, proper labels, `:focus-visible`, color contrast ≥ WCAG AA.
+
+## Tech Baseline
+
+* **Next.js (App Router)**, **React 19** features allowed.
+* **Tailwind CSS v4** with the `@theme` directive and configless approach.
+* **shadcn/ui** components generated into the repo (not a runtime dependency). Radix primitives underneath.
+* **TanStack Query v5** for client-side server-state + SSR/Hydration.
+
+## Project Structure
+
+```
+app/
+  (marketing)/
+  dashboard/
+    page.tsx
+    loading.tsx
+    error.tsx
+    layout.tsx
+  api/
+    ...route.ts      # Route Handlers for mutations/REST/webhooks
+  layout.tsx
+  page.tsx
+components/
+  ui/                # shadcn/ui components (generated) + wrappers
+  charts/            # Recharts wrappers
+  forms/             # RHF+Zod composables
+  data/              # TanStack Table adapters
+lib/
+  schemas/           # Zod schemas (shared server/client)
+  state/             # Zustand stores (client-only)
+  utils/             # cn(), fetchJson(), formatters
+  server/            # server-only helpers (db, external APIs)
+styles/
+  globals.css        # Tailwind base (uses @theme)
+```
+
+---
+
+## Next.js Best Practices (App Router)
+
+* **Rendering strategy**: default to **static or cached rendering** for read paths; switch to **dynamic** with `export const dynamic = "force-dynamic"` only when necessary. Leverage **ISR** with `revalidate` on routes, and **on‑demand** with `revalidatePath`/`revalidateTag` inside Server Actions or Route Handlers.
+* **Data fetching**: keep `fetch` calls in Server Components for secure access and better latency. Use `cache: 'force-cache'` for cacheable reads, `next: { revalidate }` for ISR, and `cache: 'no-store'` for real‑time data. Tag cache entries via `next: { tags: [...] }` to granularly revalidate.
+* **Streaming UX**: use `app/segment/loading.tsx` for route‑level fallbacks and `<Suspense>` boundaries for granular streaming. Avoid spinners that block layout; prefer skeletons.
+* **Mutations**: implement as **Server Actions** or **Route Handlers**. After writes, call `revalidatePath`/`revalidateTag` to ensure consistency instead of manually poking client caches.
+* **Route design**: model features with nested layouts; use parallel routes for complex shells and `not-found.tsx`/`error.tsx` at the segment level for resilience.
+* **Runtime**: choose **Edge** for latency‑sensitive, stateless work (beware Node‑only APIs); otherwise default to Node. Keep third‑party SDKs on the server.
+* **Images & fonts**: prefer `next/image` and `next/font` to reduce CLS and serve optimal formats and sizes.
+* **Metadata**: use the **Metadata API** (static `export const metadata` or `generateMetadata`) for SEO and social images; generate OG images per route if helpful.
+* **Providers**: consolidate client providers (Theme, React Query, Toaster) into a single `app/providers.tsx` mounted by `layout.tsx` to contain client boundaries.
+* **Avoid foot‑guns**: don’t wrap `fetch` globally in ways that break Next.js request memoization/caching; don’t overuse `use client`; don’t push everything through a single global context.
+* **Observability**: add instrumentation via `instrumentation.ts` and measure bundle size regularly (e.g., Next bundle analyzer).
+* **Budgets**: First-load JS ≤ 200KB per route group; LCP p75 ≤ 2.5s on UAT; CLS ≤ 0.1.
+* **A11y**: Axe violations = 0 on critical paths; keyboard flow passes.
+* **Reliability**: All interactive sections wrapped by ErrorCatcher; e2e “fault injection” test passes.
+
+---
+
+app/
+(marketing)/
+dashboard/
+page.tsx
+loading.tsx
+error.tsx
+layout.tsx
+api/
+...route.ts      # Route Handlers for mutations/REST/webhooks
+layout.tsx
+page.tsx
+components/
+ui/                # shadcn/ui components (generated) + wrappers
+charts/            # Recharts wrappers
+forms/             # RHF+Zod composables
+data/              # TanStack Table adapters
+lib/
+schemas/           # Zod schemas (shared server/client)
+state/             # Zustand stores (client-only)
+utils/             # cn(), fetchJson(), formatters
+server/            # server-only helpers (db, external APIs)
+styles/
+globals.css        # Tailwind base (uses @theme)
+
+````
+
+---
+
+## Tailwind v4 Conventions
+- Use utility classes directly; avoid bespoke CSS unless necessary.
+- Centralize tokens with Tailwind v4 `@theme` (and, if needed, `@theme inline`).
+- Compose classes with a small `cn()` helper (wraps `tailwind-merge`).
+
+```ts
+// lib/utils/cn.ts
+import { twMerge } from "tailwind-merge";
+import { clsx } from "clsx";
+export function cn(...inputs: any[]) {
+  return twMerge(clsx(inputs));
+}
+````
+
+---
+
+## shadcn/ui — Usage Rules (Next + Tailwind v4)
+
+### What shadcn/ui is
+
+Generated **TypeScript components you own**. They wrap **Radix UI** primitives, come pre-wired for accessibility, and are styled with Tailwind. You can edit them freely.
+
+### Install
+
+1. Initialize shadcn/ui in an existing Next project:
+
+```bash
+pnpm dlx shadcn@latest init
+```
+
+2. Add components on demand (example):
+
+```bash
+pnpm dlx shadcn@latest add button card dialog dropdown-menu input label textarea switch tabs toast
+```
+
+3. Import via the generated path (by default):
+
+```tsx
+import { Button } from "@/components/ui/button";
+```
+
+### Tailwind v4 specifics
+
+* Full support for **Tailwind v4**; components use `data-slot` attributes for targeted styling and updated types for React 19.
+* Prefer theme tokens with `@theme` rather than scattering inline hex values.
+* Keep variants in code using `class-variance-authority` (CVA) when a component needs size/variant props.
+
+### Patterns
+
+* Wrap Radix primitives only if we need a stable app-wide API; otherwise use generated components as-is.
+* Keep animations minimal with `framer-motion` where needed.
+* Do not fork shadcn/ui structure without a clear reason; modifications live where components were generated.
+
+### Theming & Dark Mode
+
+* Use `next-themes` with a `ThemeProvider` at the root client boundary; store preference in `localStorage`.
+* Provide a theme toggle in the app shell; respect `prefers-reduced-motion`.
+
+```tsx
+// app/providers.tsx
+"use client";
+import { ThemeProvider } from "next-themes";
+import { Toaster } from "@/components/ui/sonner"; // if generated
+import { QueryClientProviderWrapper } from "@/app/query-provider"; // see TanStack section
+
+export default function Providers({ children }: { children: React.ReactNode }) {
+  return (
+    <ThemeProvider attribute="class" defaultTheme="system" enableSystem>
+      <QueryClientProviderWrapper>
+        {children}
+        <Toaster richColors />
+      </QueryClientProviderWrapper>
+    </ThemeProvider>
+  );
+}
+```
+
+```tsx
+// app/layout.tsx
+import Providers from "./providers";
+export default function RootLayout({ children }: { children: React.ReactNode }) {
+  return (
+    <html lang="en" suppressHydrationWarning>
+      <body className="min-h-dvh bg-background text-foreground antialiased">
+        <Providers>{children}</Providers>
+      </body>
+    </html>
+  );
+}
+```
+
+---
+
+## TanStack Query — Usage Rules (v5)
+
+Use **TanStack Query** for **client-side server-state** (data that lives on the server and is cached on the client). Prefer **RSC + `fetch`** for read-only data in server components. Reach for TanStack Query when you need:
+
+* Client interactivity with background refetching.
+* Mutations with optimistic updates.
+* Cache-aware UI (invalidate/refetch by key).
+* Shared state across multiple client components without prop-drilling.
+
+### Provider & QueryClient (client boundary)
+
+Create a tiny provider to isolate React Query on the client. Keep one stable `QueryClient` per browser tab.
+
+```tsx
+// app/query-provider.tsx
+"use client";
+import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ReactQueryDevtools } from "@tanstack/react-query-devtools";
+import { useState } from "react";
+
+export function QueryClientProviderWrapper({ children }: { children: React.ReactNode }) {
+  const [client] = useState(() => new QueryClient({
+    defaultOptions: {
+      queries: {
+        gcTime: 1000 * 60 * 10,      // 10 min
+        staleTime: 1000 * 30,        // 30s: tune per endpoint
+        refetchOnWindowFocus: false, // don’t surprise users
+        retry: 1,
+      },
+    },
+  }));
+  return (
+    <QueryClientProvider client={client}>
+      {children}
+      {/* remove in prod if undesired */}
+      <ReactQueryDevtools initialIsOpen={false} />
+    </QueryClientProvider>
+  );
+}
+```
+
+### Prefetch on the Server & Hydrate on the Client (App Router)
+
+For pages that must render **fully populated** on first paint but also need client interactivity, prefetch on the server and **hydrate**:
+
+```tsx
+// app/(dashboard)/page.tsx — Server Component
+import { HydrationBoundary, dehydrate, QueryClient } from "@tanstack/react-query";
+import { DashboardClient } from "./dashboard-client"; // client component using useQuery
+import { getUsers } from "@/lib/server/users";       // your fetcher
+
+export default async function DashboardPage() {
+  const qc = new QueryClient();
+  await qc.prefetchQuery({ queryKey: ["users"], queryFn: getUsers });
+  return (
+    <HydrationBoundary state={dehydrate(qc)}>
+      <DashboardClient />
+    </HydrationBoundary>
+  );
+}
+```
+
+```tsx
+// app/(dashboard)/dashboard-client.tsx — Client Component
+"use client";
+import { useQuery } from "@tanstack/react-query";
+import { getUsers } from "@/lib/server/users"; // can be an HTTP call or /api route
+
+export function DashboardClient() {
+  const { data, isLoading, error } = useQuery({ queryKey: ["users"], queryFn: getUsers });
+  if (isLoading) return <div className="p-4 text-muted-foreground">Loading…</div>;
+  if (error) return <div className="p-4 text-destructive">Failed to load.</div>;
+  return (
+    <ul className="divide-y divide-border rounded-xl border">
+      {data?.map((u: any) => (
+        <li key={u.id} className="p-4">{u.name}</li>
+      ))}
+    </ul>
+  );
+}
+```
+
+### Mutations & Optimistic Updates
+
+* Keep mutations in **route handlers** (server) or external APIs; call them from client with `useMutation`.
+* Use optimistic updates carefully; always roll back on error.
+
+```tsx
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+
+function useUpdateUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { id: string; name: string }) => {
+      const res = await fetch(`/api/users/${input.id}`, { method: "PATCH", body: JSON.stringify(input) });
+      if (!res.ok) throw new Error("Update failed");
+      return res.json();
+    },
+    onMutate: async (input) => {
+      await qc.cancelQueries({ queryKey: ["users"] });
+      const prev = qc.getQueryData(["users"]);
+      qc.setQueryData(["users"], (old: any[] = []) => old.map(u => u.id === input.id ? { ...u, name: input.name } : u));
+      return { prev };
+    },
+    onError: (_err, _vars, ctx) => ctx?.prev && qc.setQueryData(["users"], ctx.prev),
+    onSettled: () => qc.invalidateQueries({ queryKey: ["users"] }),
+  });
+}
+```
+
+### When **not** to use TanStack Query
+
+* Purely static content or simple server-only reads → just use RSC + `fetch`.
+* Data that isn’t shared across multiple interactive clients → local component state or small Zustand slice.
+
+---
+
+## Forms & Validation
+
+* Co-locate Zod schemas with features, derive TypeScript types via `z.infer`.
+* Build forms with React Hook Form + Zod resolver; show inline errors; never duplicate errors in toasts.
+
+---
+
+## Data Display
+
+* **TanStack Table**: build a thin adapter that accepts columns, data, and server-driven pagination; keep cell components tiny and memoized.
+* **Recharts**: provide small `<LineChartCard/>`, `<BarChartCard/>` wrappers with a consistent `ResponsiveContainer`, tooltip, and empty state.
+
+---
+
+## UX & Feedback
+
+* **sonner** for toasts; keep messages short. `success`, `error`, `info` variants only.
+* Use Radix `Dialog`, `Popover`, `DropdownMenu`, `Toast` via shadcn/ui for accessible overlays.
+
+---
+
+## Routing & Layout
+
+* Use App Router features: nested layouts, `loading.tsx` for suspense fallbacks, route-level `error.tsx`.
+* Put global client providers in a single `app/providers.tsx` to keep `layout.tsx` mostly server.
+
+---
+
+## Performance Playbook
+
+* RSC for read paths → zero client JS.
+* Hydrate TanStack Query only when needed (per-route, not globally if avoidable).
+* `next/image`, `next/font` for assets.
+* Avoid gratuitous `useMemo`/`useCallback`; measure before optimizing.
+
+---
+
+## Testing & Linting
+
+* TypeScript strict mode. No `any` in app code.
+* ESLint with `react-hooks`, `jsx-a11y`, import order; Prettier enforced.
+* Component tests for complex UI (tables, charts, dialogs); integration tests for critical flows.
+
+---
+
+## Definition of Done
+
+* Server-first pages render without client JS unless interactivity is required.
+* shadcn/ui components compile under Tailwind v4; design tokens centralized.
+* TanStack Query is used only where client interactivity or mutations are needed; SSR prefetch + hydration works without waterfalls.
+* Zod validates all external inputs server- and client-side.
+* Lighthouse: ≥90 performance, ≥95 accessibility and best practices.
+* `next build` succeeds clean; no console errors in production.
+
+---
+
+## Error Boundaries & Logging (Per-Component Discipline)
+
+**Rule:** Any component that performs non-trivial work (data fetching on the client, heavy effects, complex rendering, or third‑party widgets) must fail **in isolation** with a visible fallback and emit a structured log.
+
+* **Route‑level boundaries**: Provide `error.tsx` per segment and `global-error.tsx` at the app root for catastrophic failures. Use friendly fallbacks and recovery affordances.
+* **Component‑level boundaries**: Wrap interactive client components with an error boundary (e.g., `react-error-boundary`) exposing `onError(error, info)` to log and a focused, minimal fallback UI.
+* **Logging**: In `onError`, call `captureException` (Sentry or equivalent). Include `componentName`, `propsShape`, and `featureTag` in the event payload. Server-side, also log via `instrumentation.ts`.
+* **User notice**: If a failure degrades a parent/child/sibling experience (e.g., a dashboard card), show a local downtime message and a retry button; don’t take the whole page down.
+* **Dev ergonomics**: Add a `Thrower` test component behind a dev flag to trigger boundaries locally.
+
+```tsx
+// components/safety/ErrorCatcher.tsx
+"use client";
+import { ErrorBoundary } from "react-error-boundary";
+import { captureException } from "@sentry/nextjs"; // or your logger
+
+export function ErrorCatcher({ children, featureTag }: { children: React.ReactNode; featureTag: string }) {
+  return (
+    <ErrorBoundary
+      onError={(error, info) => captureException(error, { tags: { feature: featureTag }, extra: { info } })}
+      fallbackRender={({ resetErrorBoundary }) => (
+        <div role="status" className="rounded-xl border p-4">
+          <p className="text-sm">This section had a hiccup.</p>
+          <button className="mt-2 rounded-md border px-3 py-1" onClick={resetErrorBoundary}>Retry</button>
+        </div>
+      )}
+    >
+      {children}
+    </ErrorBoundary>
+  );
+}
+```
+
+---
+
+## Axiom: Refinement Trumps Existence
+
+**Intent:** Don’t ship vague blobs. Ship small, composable cogs that are accessible, atomic, and safe. Implementation is deferred until the cogs exist.
+
+### 1) Accessibility (bare‑minimum, non‑negotiable)
+
+* **Keyboard**: All interactive elements are reachable via Tab/Shift+Tab with visible `:focus-visible`. Arrow keys for menus, Esc to close modals.
+* **Semantics**: Use native elements first (`<button>`, `<a>`, `<label>`). ARIA augments, never replaces, semantics.
+* **Forms**: Inputs have labels, descriptions, and inline error text. Associate via `id`/`htmlFor`.
+* **Contrast**: Text and interactive controls meet WCAG AA contrast.
+* **Announcements**: Async state changes (loaders, toasts for success/failure) are conveyed via ARIA live regions where appropriate.
+* **Testing**: Axe CI or eslint-plugin-jsx-a11y; keyboard‑only runs in Playwright.
+
+**Component checklist (include in PRs):**
+
+* [ ] Tabbable? \[ ] Focus visible? \[ ] Escape closes overlays? \[ ] Arrow key navigation for menus/tabs? \[ ] Label + describedby wired? \[ ] Contrast AA? \[ ] Live updates announced?
+
+### 2) Atomicity (single purpose, reusable)
+
+* **Purpose first**: Write the contract (props + events) before JSX.
+* **No monoliths**: If reuse is likely, pause feature work and extract units: **primitive** (UI), **container** (data), **adapter** (Query/Table/Chart wrapper), **composite** (page section).
+* **Colocation**: Keep variants and styles in component files; keep schemas in `lib/schemas` if shared.
+* **Versioning**: Breaking changes require a codemod or refactor plan in the PR description.
+
+### 3) Safety (security + stability)
+
+* **Security**: Default‑deny CSP, avoid `dangerouslySetInnerHTML`; sanitize if unavoidable. Validate input with Zod at all boundaries. Harden cookies (HttpOnly, Secure, SameSite).
+* **Headers**: Apply security headers (CSP, Referrer-Policy, Permissions-Policy) in Next `headers()`.
+* **Data**: Never echo secrets to the client. Use `NEXT_PUBLIC_` only when intended. Avoid logging PII.
+* **Stability**: Guard all network calls with timeouts, abort signals, and error paths. Use React Query retries=1 and surface a retry UI.
+* **Revalidation**: After mutations, call `revalidatePath`/`revalidateTag`—don’t rely on stale client caches.
+
+---
+
+## Axiom: Tools Triumph (DX enables velocity & AI workflows)
+
+**Heuristic:** “If I could *X*, I could *Y*.” Capture X as a tool, then integrate it so humans and AI agents can invoke it.
+
+### Environment configuration (type‑safe, leak‑resistant)
+
+* Use **@t3-oss/env-nextjs** + **Zod** to define `env.ts` schemas. Fail fast at boot; never let unknown config reach prod. Separate server vs public vars.
+* Prefer `.env.local` for secrets; never commit. For UAT, use a distinct `.env.uat` with CI‑injected values.
+
+```ts
+// env.ts
+import { createEnv } from "@t3-oss/env-nextjs";
+import { z } from "zod";
+export const env = createEnv({
+  server: { DATABASE_URL: z.string().url(), OPENAI_API_KEY: z.string().min(20) },
+  client: { NEXT_PUBLIC_API_URL: z.string().url() },
+  runtimeEnv: {
+    DATABASE_URL: process.env.DATABASE_URL,
+    OPENAI_API_KEY: process.env.OPENAI_API_KEY,
+    NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
+  },
+});
+```
+
+### Observability & error intelligence
+
+* Use `instrumentation.ts` for traces/metrics and Sentry (or OpenTelemetry) for errors. Tag events with `feature`, `userId` (hashed), and `route`.
+* Add a `/__health` route (Node runtime) for synthetic checks.
+
+### AI/Agent hooks (MCP‑friendly)
+
+* Expose safe, documented CLI‑like actions the AI can call (e.g., `tools/env-validate`, `tools/lint-a11y`, `tools/analyze-bundle`).
+* Surface “I could X → I could Y” prompts as GitHub issues with a label (`dx-pain`) and link a script or MCP server handler.

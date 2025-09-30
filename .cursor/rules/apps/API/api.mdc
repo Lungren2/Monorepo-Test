@@ -1,0 +1,175 @@
+---
+globs: apps/api/**
+alwaysApply: false
+---
+
+# API RULES.md — Minimal APIs + FastEndpoints (Rules, Not Theater)
+
+> Scope: Single app, strict multi‑tenant. This file is **logic and guardrails**, not scaffolding.
+
+---
+
+## 0) Why these rules exist
+
+APIs fail in two ways: **drift** (spec/code/users disagree) and **leaks** (wrong tenant, wrong auth, wrong error). These rules target the few decisions that change outcomes. Everything else is taste.
+
+---
+
+## 1) The contract is the source of truth
+
+**Purpose:** Stop spec/code drift.
+
+* Maintain a living **OpenAPI 3.1** description. Serve it (Swashbuckle) and a human UI (Scalar).
+* On any change: **lint → validate → diff vs last released** → (optionally) regenerate types/SDKs/docs. Breaking diffs demand a semver bump.
+* Store the previous spec near the binary (e.g., `/spec-releases/v1.json`) so the server can compare without CI.
+* If the contract says A and code does B, **code is wrong** until the contract changes.
+
+**Failure to avoid:** undocumented/breaking changes.
+
+---
+
+## 2) Trust boundaries are explicit on every request
+
+**Purpose:** Multi‑tenant correctness beats clever code.
+
+* Evaluate each request for **who** (auth), **what** (role/attributes), and **which tenant** (`org_id`). You must be able to point to: where `org_id` came from and how it constrained the query.
+* **First‑party web app:** BFF session **cookies** + **CSRF**; credentials only for the first‑party origin.
+* **Cross‑domain:** **OAuth2 Client Credentials** with **short‑lived JWT**, **exact‑origin CORS allowlist**, per‑client scopes and rate limits.
+
+**Failure to avoid:** cross‑tenant reads/writes; wildcard CORS with credentials.
+
+---
+
+## 3) Errors are standardized and boring
+
+**Purpose:** Humans triage faster; machines parse reliably.
+
+* All non‑2xx use **Problem Details** (`application/problem+json`) with `type`, `title`, `status`, `detail`, `instance`, plus `trace_id` (and `org_id` when auth’d).
+* No stack traces or PII in responses. Map known exceptions to stable `type` URIs.
+
+**Failure to avoid:** ad‑hoc `{ error: "nope" }` formats.
+
+---
+
+## 4) Unsafe methods are idempotent by key
+
+**Purpose:** Survive retries and flaky networks without duplicate side‑effects.
+
+* Require **`Idempotency-Key`** on **POST**, and on **PATCH/DELETE** when the action isn’t naturally idempotent.
+* Same key + same body → same result; different body → **409 Idempotency‑Key Mismatch**.
+* Persist keys with TTL; echo the prior response for replays.
+
+**Failure to avoid:** double charges / duplicate writes under retries.
+
+---
+
+## 5) Pagination never lies under write load
+
+**Purpose:** Stable lists, predictable performance.
+
+* Default to **cursor (keyset) pagination**. `limit` default 50, max 200.
+* Sort by a **stable keyset** (e.g., `created_at DESC, id DESC`); return an **opaque** `next` token; changing filters invalidates the token; **no totals** by default.
+
+**Failure to avoid:** offset scans that skip/duplicate rows.
+
+---
+
+## 6) The wire is efficient and safe by default
+
+**Purpose:** Make the fast path the easy path.
+
+* **HTTP/2** enabled; configure limits where needed.
+* **Response compression** (Brotli/Gzip) for JSON/text **when** upstream isn’t handling it.
+* **CORS:** deny by default; list exact origins for machine clients; credentials only for BFF.
+
+**Failure to avoid:** slow payloads; `*` with credentials; accidental cross‑origin exposure.
+
+---
+
+## 7) Logs answer “who/what/where/when” in one line
+
+**Purpose:** Diagnose incidents without a SIEM.
+
+* **Structured JSON** logs to disk (daily rotation, 14‑day retention). Every line includes: `ts`, `level`, `trace_id`, `org_id`, `route`, `status`, `latency_ms`.
+* No request/response bodies; strip auth headers and cookies. Add Seq locally if you want nicer browsing—the format stays stable for future OTel.
+
+**Failure to avoid:** errors you can’t correlate to a tenant/request.
+
+---
+
+## 8) Namespace & project reasoning (before any code)
+
+**Purpose:** Avoid diffusion and accidental complexity in a verbose language.
+
+* **Search first.** If you plan to introduce a namespace/class/method, **search the codebase** for an existing one. Do not reinvent a mapper, policy, or helper because it’s out of sight. If it needs change: **pause implementation, design the cogs, then refactor**—don’t bolt features onto a monolith.
+* **Map dependencies.** Write two lists in the PR/commit description:
+
+  * **Parents (dependants):** who will call this?
+  * **Children (dependees):** what will this call?
+* **Pseudocode the flow** (input → validation → authz/tenant → service → repo → response) before touching code. Note where errors are surfaced as Problem Details and where idempotency/pagination apply.
+* **Namespace intent:** a namespace should reveal **capability** (e.g., `Billing.Invoices`) not infrastructure. Infrastructure namespaces exist, but feature code shouldn’t bleed into them.
+
+**Failure to avoid:** duplicated helpers, sprawling interfaces, untraceable call graphs.
+
+---
+
+## 9) Minimal conventions for handlers (human & AI prompts)
+
+Ask and answer these **seven** before writing a handler:
+
+1. **Auth**: who is allowed?
+2. **Tenant**: where does `org_id` come from and how is it enforced in queries?
+3. **Validation**: which fields and ranges fail fast at the edge?
+4. **Error shape**: what Problem Details will be emitted on common failures?
+5. **Idempotency**: is there a key requirement and a replay policy?
+6. **Pagination**: for lists, keyset ordering and token format?
+7. **CORS audience**: first‑party BFF (cookies+CSRF) or machine (JWT+allowlist)?
+
+If any answer is hand‑wavy, **stop** and make it precise.
+
+---
+
+## 10) Rate limits & quotas
+
+**Purpose:** Fairness and stability.
+
+* Baseline **100 req/min per user**. Per‑tenant overlays (plan‑based). Per‑client limits for machine routes.
+* Exceeding limit → `429` + `Retry‑After`.
+
+---
+
+## 11) Data & time
+
+**Purpose:** Predictability.
+
+* **UTC in, UTC out.** ISO‑8601 timestamps.
+* **Read‑your‑writes** where possible; accept eventual consistency for derived views.
+* Multi‑table writes are transactional.
+
+---
+
+## 12) Documentation & discovery
+
+**Purpose:** People should succeed without reading the code.
+
+* Scalar UI at `/docs` (auth‑gated outside dev). Link Problem‑Types registry and common errors.
+* Include a small “how to page results” and “how to retry with Idempotency‑Key” section in the docs.
+
+---
+
+## 13) Operational defaults (in‑app)
+
+**Purpose:** Keep ops simple without external dependencies.
+
+* Health endpoints: `/health` (readiness) and `/liveness`.
+* Inbound request timeout (e.g., 30s) and outbound HTTP timeouts (5–10s) set explicitly.
+* Graceful shutdown drains in‑flight requests.
+
+---
+
+### Appendix A — Terminology snapshot (for humans & AI)
+
+* **BFF**: a backend tailored for your first‑party web app; keeps OAuth tokens server‑side and uses session cookies + CSRF to the browser.
+* **Problem Details**: standardized JSON error envelope (content type `application/problem+json`).
+* **Idempotency‑Key**: client‑supplied key that makes retries safe for unsafe methods.
+* **Keyset pagination**: “seek” by last item’s sort keys; never offset/limit under writes.

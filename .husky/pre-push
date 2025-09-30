@@ -1,0 +1,9 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+# Run tests and build to ensure everything is working
+echo "Running tests..."
+pnpm test
+
+echo "Building projects..."
+pnpm build
