@@ -1,3 +1,107 @@
 ---
-alwaysApply: true
+description: When handling system authorization
+globs: []
+alwaysApply: false
+contextPriority: medium
+relatedRules: ["security/authentication-patterns", "api-general-guidelines"]
+keywords: ["authorization", "rbac", "abac", "permissions", "policy", "least-privilege"]
+lastUpdated: "2025-01-03"
 ---
+# Core principles
+
+* **Least privilege, always**: Every call evaluated against the minimum rights needed. Start from deny.
+* **Separation of concerns**: Identity/authN issues tokens; **authorization** is a separate policy layer.
+* **Consistency over cleverness**: One decision point and one policy language for the whole platform.
+* **Auditable decisions**: Every “allow” can be explained: who, what, why, when, which rule.
+
+# Model the problem first
+
+* **Resource modeling**: Give everything a stable resource ID and type: `document:123`, `account:456`.
+* **Actions are verbs**: `read`, `update`, `delete`, `approve`, `share`. Don’t overfit to HTTP verbs.
+* **Tenancy**: Make tenant a first-class attribute. Encode it in resource IDs or in policy input.
+* **Ownership and hierarchy**: Define how rights inherit across trees (org → team → project → item).
+
+# Policy patterns (choose 1–2, not all)
+
+* **RBAC**: Roles → permissions. Great for coarse grain and admin consoles.
+* **ABAC**: Attributes on subject/resource/context (e.g., country, risk, time). Use for constraints.
+* **ReBAC**: Graph relationships (member of, owner of, shared with). Use for “sharing” and org trees.
+* **Scopes**: For APIs and third-party apps, use explicit scopes tied to actions.
+
+Typical blend: **RBAC for base grants** + **ABAC constraints** + **ReBAC for sharing**.
+
+# Architecture
+
+* **PDP vs PEP**: A **Policy Decision Point** (e.g., OPA, Cedar, Zanzibar-style) makes `allow/deny`. **Policy Enforcement Points** live in services and call the PDP.
+* **Central policy repo**: Versioned, code-reviewed, CI-tested, with staged rollouts.
+* **Cache with care**: Cache positive decisions briefly; invalidate on revocation. Never cache admin bypass.
+* **Decision inputs**:
+
+  * Subject: `user_id`, roles, groups, risk score, device posture.
+  * Resource: type, ID, tenant, owner, classification.
+  * Context: time, IP, request path, auth strength, feature flags.
+
+# Object-level authorization (must-have)
+
+* **Check on the object, not just the route**: `can(user, 'read', doc:123)`.
+* **Query filtering**: Push authZ into data access. Example: add `WHERE` clauses derived from policy so lists only contain authorized rows. Prevents IDOR.
+* **Write guards**: On updates, re-check rights on both the target and changed fields.
+
+# Admin and delegation
+
+* **Privilege boundaries**: Admins limited to their tenant/scope. No global god-mode in prod.
+* **Delegation & sharing**: First-class “grant” flows with audit. Expiry on delegated access.
+* **Break-glass**: Emergency role with short TTL, mandatory reason, and noisy alerts.
+
+# Tokens and sessions
+
+* **Short-lived access tokens** with audience and scopes. Use refresh tokens with rotation.
+* **JWT vs opaque**: JWT for read-mostly, low-revocation needs; opaque + introspection for quick revokes.
+* **Bound tokens**: Tie to client or mTLS for service-to-service. Consider DPoP/MTLS for browser APIs that need strong sender binding.
+
+# Multi-tenant specifics
+
+* **Tenant binding everywhere**: Token contains `tenant_id`; every resource carries the same. Match or deny.
+* **No cross-tenant queries**: Enforce at ORM/repository layer with tenancy guards.
+* **Per-tenant admin roles**: Avoid “GlobalAdmin” outside break-glass.
+
+# Data sensitivity & partial access
+
+* **Field-level controls**: Allow read of a record but mask PII fields unless a higher permission exists.
+* **Purpose limitation**: Include `purpose` in decision input; log it. Useful for privacy programs.
+* **Rate + volume gates**: Even “read” can exfiltrate. Throttle by sensitivity/classification.
+
+# Policy examples (illustrative)
+
+**Pseudocode decision contract**
+
+```ts
+type DecisionInput = {
+  subject: { id: string; roles: string[]; groups: string[]; tenant: string; auth_strength: 'pwd'|'mfa'|'hw' };
+  action: 'read'|'update'|'delete'|'approve'|'share';
+  resource: { type: 'doc'|'invoice'|'user'; id: string; tenant: string; owner: string; classification: 'public'|'internal'|'restricted' };
+  context: { time: string; ip: string };
+}
+type Decision = { allow: boolean; obligations?: Record<string, unknown>; reason?: string; policy_version: string };
+```
+
+**ABAC guard (Cedar-style vibe)**
+
+```
+permit(
+  action in ['read'],
+  principal in Group('analyst'),
+  resource.type == 'doc' && resource.tenant == principal.tenant &&
+  resource.classification in ['public','internal']
+) when { context.time.hour in 5..21 };
+```
+
+# Common pitfalls
+
+* Route-level “role checks” without resource checks.
+* Using JWT roles client-side to hide UI elements and calling it “security”.
+* Role explosion. Solve with permissions and groups; keep roles stable and few.
+* Long-lived tokens with no revocation path.
+* Orphaned grants and zombie shares. Add TTLs and periodic sweeps.
+* Forgetting background jobs and webhooks. They need the same authZ as front-door APIs.
+* Mixing authN strength. Certain actions should require step-up (MFA or hardware key).

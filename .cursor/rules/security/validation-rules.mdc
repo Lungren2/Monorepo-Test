@@ -1,3 +1,108 @@
 ---
-alwaysApply: true
+description: When handling validation
+globs: []
+alwaysApply: false
+contextPriority: medium
+relatedRules: ["dependencies/typescript-best-practices", "api-general-guidelines"]
+keywords: ["validation", "zod", "type-safety", "input-validation", "schema"]
+lastUpdated: "2025-01-03"
 ---
+
+# Structure & Identity
+
+* **Schema required**: Every payload must match a versioned schema; unknown fields are rejected or quarantined (no silent drop).
+* **Stable IDs**: `id` is globally unique, immutable, and opaque (no meaning encoded).
+* **Idempotency**: Mutating requests/events carry an `idempotency_key`; duplicates are detected and handled.
+
+# Types & Formats
+
+* **Strong types**: Enforce primitive types strictly (no “3” where `number` is expected).
+* **Timestamps**: `created_at`, `updated_at`, `occurred_at` in RFC 3339/ISO-8601 UTC only.
+* **Booleans**: Only `true|false`. No “yes/0/1”.
+* **Decimals**: Use strings for high-precision decimals (money) or fixed-point with scale; reject IEEE NaN/Inf.
+* **Text encoding**: UTF-8 only; reject invalid code points.
+
+# Ranges & Constraints
+
+* **Required vs optional**: Explicitly mark; reject if required is missing.
+* **Length/size caps**: Max length for strings, arrays, and blobs; max payload size at transport.
+* **Numerical bounds**: Enforce inclusive ranges and units (see next).
+* **Enums**: Closed set with case sensitivity; unknown values rejected.
+
+# Units & Semantics
+
+* **Units explicit**: Always include unit fields (e.g., `amount` + `currency`, `distance_meters`).
+* **Currency**: ISO 4217 codes; no “$”.
+* **Locale**: No locale-formatted numbers/dates in data; presentation only.
+
+# Referential Integrity
+
+* **Foreign keys**: Validate existence (synchronously or via async reconciliation) before accepting.
+* **State machines**: Enforce legal transitions (e.g., `pending → settled`, not `settled → pending`).
+
+# Collections & Ordering
+
+* **Deterministic order**: If order matters, include an `sequence` integer or stable sort keys.
+* **Uniqueness**: No duplicate items within arrays unless explicitly allowed.
+
+# Temporal Rules
+
+* **Clock sanity**: Reject timestamps too far in future/past beyond a configurable skew.
+* **Monotonicity**: `updated_at` must be ≥ previous; event `sequence` strictly increasing per entity/stream.
+
+# Nulls & Defaults
+
+* **No overloaded null**: Distinguish `null` (explicitly unknown) from “field missing” (not provided) and defaults.
+* **Defaulting**: Apply on write; never on read without marking `derived: true`.
+
+# Versioning & Evolution
+
+* **Schema version**: `schema_version` required; support N and N-1 at most.
+* **Backward-compatible changes only**: Additive fields defaulted; removals behind deprecation windows.
+* **Feature flags**: Gate new fields/behaviors; clients must opt in.
+
+# Security & Privacy
+
+* **Transport**: TLS 1.2+ only; reject plaintext.
+* **Auth context**: `actor_id`, `origin`, and `scope` validated with each mutation.
+* **PII/PHI classification**: Fields tagged; masked in logs/metrics; forbidden to appear in errors.
+* **Content safety**: Strip/validate HTML; prevent injection (escape or reject).
+* **Integrity**: Optional HMAC/signature for cross-org data; verify before accept.
+
+# Idempotency & Concurrency
+
+* **Write de-dupe**: Same `idempotency_key` + request hash → same outcome.
+* **ETags/If-Match**: For updates, require version precondition to avoid lost writes.
+
+# Errors & Observability
+
+* **Deterministic errors**: Machine-readable codes, human messages, and field paths (JSON Pointer).
+* **Traceability**: `trace_id`/`correlation_id` required; propagate end-to-end.
+* **Validation audit**: Record which rules fired; expose counts in metrics (not payloads).
+
+# Performance Guardrails
+
+* **Pagination**: Enforce `limit` bounds; return cursors, not offsets, for large datasets.
+* **Rate & burst limits**: Validate and throttle at edge; return standard headers.
+
+# Data Quality & Provenance
+
+* **Provenance fields**: `source_system`, `ingest_method`, `producer_version`.
+* **Dedup heuristics**: For event streams, validate `(entity_id, sequence|occurred_at)` uniqueness windows.
+* **Checksum**: Large files include a checksum (e.g., SHA-256) validated on receipt.
+
+# Fault Tolerance
+
+* **Retry-safe semantics**: Only idempotent endpoints are retryable; others must reject retried requests without keys.
+* **Poison message handling**: If validation fails repeatedly, dead-letter with reason; never loop forever.
+
+# Redaction & Minimization
+
+* **Data minimization**: Reject fields not needed for the purpose; don’t accept “just in case”.
+* **Selective echoes**: Responses never reflect secrets or full PII; confirm acceptance with opaque references.
+
+# Where it’s limited
+
+* **Semantics**: Rules like “`updated_at` must always be ≥ `created_at`” or “state can only move from pending → settled.” Those require custom validation logic.
+* **Cross-entity rules**: Referential integrity, uniqueness across requests, or deduplication need coverage.
+* **Runtime constraints**: Things like rate limits, idempotency keys, retries, or dead-letter handling need direct modelling.

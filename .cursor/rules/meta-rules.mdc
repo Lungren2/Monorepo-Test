@@ -1,0 +1,104 @@
+---
+description: Author, review, and evolve Cursor rules so they stay small, referential, and conflict-free
+globs: [".cursor/rules/**/*.mdc"]
+alwaysApply: false
+contextPriority: end
+relatedRules: ["documentation", "general-styling"]
+keywords: ["rule-authoring", "frontmatter", "meta", "context-engineering"]
+lastUpdated: "2025-01-03"
+---
+
+# Meta: Authoring & Updating Rules
+
+## When to apply
+
+Use this rule whenever you create or edit any file under `.cursor/rules/**/*.mdc`, or you’re reviewing a PR that adds/changes a rule.
+
+## Enhanced Frontmatter Fields
+
+* **contextPriority** (required): Controls when this rule is loaded in context window
+  - `beginning`: Critical architecture/state (0-20% position) - use sparingly (≤5 rules)
+  - `high`: Frequently accessed patterns (20-40% position) - ≤10 rules
+  - `medium`: Specialized guidance (40-60% position) - default for most rules
+  - `low`: Rarely needed (60-80% position) - optional/niche tools
+  - `end`: Examples, self-referential (80-100% position) - meta rules, reference docs
+
+* **relatedRules** (required): Array of related rule IDs for cross-navigation
+  - Use relative paths from `.cursor/rules/`
+  - Example: `["dependencies/typescript-best-practices", "domain-modeling"]`
+  - Enables agents to find related context efficiently
+  - Extract from "See also" sections + logical dependencies
+
+* **keywords** (required): Array of semantic search terms (3-7 max)
+  - Use domain vocabulary, not generic terms
+  - Example: `["rsc", "server-component", "hydration"]` not `["react", "component"]`
+  - Extracted from title, description, and key concepts
+
+* **lastUpdated** (required): ISO date (YYYY-MM-DD)
+  - Update when rule content changes
+  - Helps agents understand freshness
+  - Use current date for all initial enhancements
+
+## Do
+
+* **Start with discovery.** Scan existing rules and build a quick index `{filename → frontmatter(globs, alwaysApply, description, contextPriority, keywords)}`. Note overlaps and duplicated guidance.
+* **Prefer edits over new files.** If an existing rule’s scope fits, extend it; don’t fork near-duplicates.
+* **Keep scope single-purpose.** One domain/topic per rule. Split mixed guidance into separate files.
+* **Choose precise `globs`.** Target only the files that should trigger the rule. Test the glob mentally on a few repo paths.
+* **Reserve `alwaysApply: true`.** Only for short, universal guardrails (tone/safety). Everything else should be JIT via `globs`.
+* **Be referential, not repetitive.** Point to existing rules in a **See also** section instead of restating guidance.
+* **Use the house structure.** Frontmatter (description/globs/alwaysApply) → Title → “When to apply” → **Do/Don’t** → **See also** → optional **Examples** → **Sanity checks**.
+* **Write minimal, durable examples.** One canonical snippet that won’t churn with versions.
+* **Add safety guardrails.** If a rule could trigger tools/commands/migrations, require explicit confirmation and note rollback steps.
+* **Optimize for retrieval.** Clear, specific title; stable terminology; helpful anchors; ≤ ~500 lines.
+* **Check compatibility.** Resolve clashing `globs` and conflicting `alwaysApply` guidance before merging.
+* **Document intent.** In PR description, state why this is a new rule (vs. an edit) and which overlaps you checked.
+
+## Don’t
+
+* Don’t ship rules without a discovery pass over the current rule surface.
+* Don’t use broad `globs` like `"**/*"` or cover multiple languages/frameworks in one file.
+* Don’t duplicate content from other rules; link to them.
+* Don’t include sprawling checklists, volatile version pinning, or chatty prose.
+* Don’t add destructive or external-call instructions without confirmation/rollback notes.
+* Don’t exceed ~500 lines or bury the key directives beneath narrative.
+
+## Minimal, Canonical Example
+
+```md
+---
+description: Enforce lightweight PR templates for docs
+globs: ["docs/**/README.md", "docs/**/CONTRIBUTING.md"]
+alwaysApply: false
+contextPriority: medium
+relatedRules: ["documentation", "general-styling"]
+keywords: ["pr-template", "docs", "contributing"]
+lastUpdated: "2025-01-03"
+---
+# Docs: PR Template Nudges
+
+## When to apply
+- Editing README/CONTRIBUTING files under /docs.
+
+## Do
+- Link to `.github/pull_request_template.md` instead of duplicating its content.
+- Add a short “Conventions” subsection with repo-wide anchors.
+
+## Don’t
+- Don’t restate the full PR checklist.
+
+## See also
+- .cursor/rules/meta/authoring.mdc#referential-guidance
+```
+
+## Sanity checks
+
+* Does the new/updated rule **reduce duplication** by linking instead of restating?
+* Are the `globs` the **narrowest** set that activates at the right time?
+* Is any potentially destructive guidance protected by **confirm/rollback** steps?
+* Can a newcomer apply the rule in **≤ 2 minutes** without external context?
+* Did you verify no conflicting `alwaysApply` guidance exists?
+* Is `contextPriority` appropriate for usage frequency?
+* Are `relatedRules` bidirectionally consistent (if A links to B, B should link to A)?
+* Are `keywords` domain-specific and semantic (not generic)?
+

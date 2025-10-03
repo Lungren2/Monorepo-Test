@@ -1,3 +1,141 @@
 ---
-alwaysApply: true
+description: When configuring CORS or setting headers
+globs: []
+alwaysApply: false
+contextPriority: medium
+relatedRules: ["security/authentication-patterns", "api-general-guidelines"]
+keywords: ["cors", "csp", "security-headers", "hsts", "cookies"]
+lastUpdated: "2025-01-03"
 ---
+
+# Core security headers (ship these everywhere)
+
+* `Strict-Transport-Security: max-age=31536000; includeSubDomains; preload`
+  Enforce HTTPS. Only preload after you’re sure all subdomains are HTTPS. Use a shorter max-age in staging.
+* `Content-Security-Policy: ...`
+  Web apps: use nonces + `strict-dynamic`; ban inline by default.
+  APIs: a minimal `default-src 'none'` is fine.
+* `X-Content-Type-Options: nosniff`
+  Blocks MIME sniffing.
+* `Referrer-Policy: strict-origin-when-cross-origin`
+  Keeps analytics useful while protecting full paths.
+* `Permissions-Policy: ...`
+  Explicitly deny sensors, camera, mic, etc. Example below.
+* `Cross-Origin-Opener-Policy: same-origin`
+  Isolation hardens against Spectre + popup hijack.
+* `Cross-Origin-Resource-Policy: same-site`
+  Prevents other sites from pulling your resources unless same-site.
+* `Cross-Origin-Embedder-Policy: require-corp`
+  Pair with CORP/COEP only if you need cross-origin isolation (e.g., WebAssembly/SharedArrayBuffer).
+* `Origin-Agent-Cluster: ?1`
+  Per-origin isolation for better memory and security.
+* `Server: ` (empty or generic) and remove `X-Powered-By`
+  Don’t advertise stack versions.
+
+# CORS (only if truly needed)
+
+* `Access-Control-Allow-Origin: https://app.example.com` (no `*` when sending cookies or auth)
+* `Vary: Origin`
+* `Access-Control-Allow-Credentials: true` only if you must.
+* `Access-Control-Allow-Methods: GET, POST, PUT, PATCH, DELETE` (trim to what you use)
+* `Access-Control-Allow-Headers: content-type, authorization, x-request-id` (explicit list)
+* `Access-Control-Max-Age: 600` to cache preflights.
+  Validate `Origin` server-side; don’t reflect arbitrary origins.
+
+# Cookies (auth/session)
+
+Use `Set-Cookie: session=...; Path=/; Secure; HttpOnly; SameSite=Strict` for user sessions.
+If you must cross-site (rare), switch to `SameSite=None; Secure`.
+For key-scoped storage across partitions (CHIPS): `Partitioned`.
+Rotate and bind sessions to a device fingerprint or `User-Agent` family if you can tolerate friction.
+
+# Caches, downloads, and content
+
+* Sensitive responses:
+  `Cache-Control: no-store`
+* Public static assets:
+  `Cache-Control: public, max-age=31536000, immutable` + file fingerprinting
+* APIs with pagination: return strong `ETag` and `Last-Modified` where possible.
+* File downloads:
+  `Content-Disposition: attachment; filename="safe-name.ext"`
+  `Content-Type` must match the actual bytes.
+
+# Framing & clickjacking
+
+Prefer CSP over legacy header:
+
+* `Content-Security-Policy: frame-ancestors 'none'` (or explicit allowlist of embedding origins).
+  Keep `X-Frame-Options: DENY` for legacy browsers.
+
+# Observability (privacy-safe)
+
+* Use the Reporting API endpoint, not deprecated `Report-To`/NEL.
+  Example:
+  `Reporting-Endpoints: csp="https://reporter.example.com/csp"`
+  Then add `report-to csp; report-sample` inside your CSP to get stack traces without overexposing user data.
+
+# Fetch metadata hardening
+
+Validate `Sec-Fetch-Site`, `Sec-Fetch-Mode`, `Sec-Fetch-Dest` on the server.
+Example rule: block state-changing requests unless `Sec-Fetch-Site` ∈ {same-origin, same-site} and `Mode` is `cors` or `same-origin`.
+
+# CSP quick templates
+
+**Single-page web app (tight, nonce-based):**
+
+```
+Content-Security-Policy:
+  default-src 'none';
+  script-src 'nonce-{RANDOM}' 'strict-dynamic' https:;
+  style-src 'self' https: 'unsafe-inline';
+  img-src 'self' https: data:;
+  font-src 'self' https:;
+  connect-src 'self' https://api.example.com;
+  frame-ancestors 'none';
+  base-uri 'none';
+  form-action 'self';
+  object-src 'none';
+  report-to csp; report-sample
+```
+
+Notes: generate a fresh nonce per response; remove `'unsafe-inline'` from styles once you inline nonces or hashes for critical CSS.
+
+**JSON API:**
+
+```
+Content-Security-Policy: default-src 'none'; frame-ancestors 'none'; base-uri 'none'; object-src 'none'
+```
+
+# Permissions-Policy starter
+
+Deny by default, open surgically:
+
+```
+Permissions-Policy:
+  geolocation=(),
+  microphone=(),
+  camera=(),
+  usb=(),
+  bluetooth=(),
+  payment=(),
+  idle-detection=(),
+  gyroscope=(),
+  magnetometer=(),
+  accelerometer=()
+```
+
+If you do need one, allow only specific origins:
+`geolocation=("https://app.example.com")`
+
+# API + browser cache + range
+
+* Support range requests on large assets (`Accept-Ranges: bytes`).
+* For APIs, include `Cache-Control: no-store` on auth/PII endpoints and `Cache-Control: private, max-age=60` for read endpoints that are safe to briefly cache in the browser.
+
+# Common pitfalls to avoid
+
+* `Access-Control-Allow-Origin: *` with `Allow-Credentials: true` (blocked by browsers, and insecure).
+* CSP with `'unsafe-inline'` on scripts or global `*` sources.
+* HSTS on in-development domains or before all subdomains are HTTPS.
+* HPKP/Expect-CT (both obsolete).
+* Over-broad `Accept-CH` that leaks device info; don’t ask for client hints unless you truly use them.

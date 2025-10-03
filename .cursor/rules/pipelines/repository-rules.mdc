@@ -1,0 +1,152 @@
+---
+description: Enforce GitHub repo governance and IIS CI/CD deployment across dev → staging → UAT → prod with protected branch flow and parity practices
+globs: [".github/**/*", "scripts/deploy/**", "**/RELEASE_NOTES.md", "**/docs/release/**"]
+alwaysApply: false
+contextPriority: medium
+relatedRules: ["pipelines/gh-actions"]
+keywords: ["branch-protection", "deployment", "iis", "environments", "parity"]
+lastUpdated: "2025-01-03"
+---
+
+# Repo Governance & IIS CI/CD (GitHub)
+
+## When to apply
+
+* Creating or editing GitHub branch policies, workflows in `.github/workflows/*`, release notes, or deployment scripts for Windows/IIS via GitHub Runners.
+* Planning or reviewing the branch/PR flow across **development → staging → UAT → main (prod)**.
+
+## Branch Model (stable, PR-chained)
+
+* **Core env branches** (protected):
+
+  * `develop` → `staging` → `uat` → `main` (prod)
+* **Helper/parity branches** (short-lived):
+
+  * `feature/<slug>` (base: `develop`)
+  * `hotfix/<slug>` (base: `main`)
+  * `release/<version>` (cut from `uat` to stage release notes, config toggles)
+  * `docs/<version>` (release documentation parity; merges back to `develop` and `main`)
+* **Merge direction (no back-merges except parity)**:
+
+  * Normal flow: `feature/*` → `develop` → `staging` → `uat` → `main`
+  * **Parity after prod**: merge `main` → `uat` → `staging` → `develop` to keep lines in sync.
+  * **Hotfix flow**: `hotfix/*` → `main`, then parity back down `main` → `uat` → `staging` → `develop`.
+
+## Branch Protection (GitHub settings)
+
+* Protect `develop`, `staging`, `uat`, `main`:
+
+  * Require PRs, **no direct pushes**, **no force-push**, **no branch deletes**.
+  * Require status checks to pass: build, tests, lint, SAST/secret scan, DB drift check.
+  * Require **at least 1–2 approvals** (2 for `uat`, `main`), with **code owners** on critical paths.
+  * Require conversations resolved; restrict who can dismiss reviews.
+  * Enforce **linear history** (squash or rebase merges); disallow merge commits.
+  * Require **signed commits** and **signed tags** on `main`.
+* Naming and duplication guard:
+
+  * Enforce patterns via branch rules: `^(develop|staging|uat|main|feature\/.+|hotfix\/.+|release\/\d+\.\d+\.\d+|docs\/\d+\.\d+\.\d+)$`.
+
+## CI (build, test, package, verify)
+
+* **Triggers**:
+
+  * `push` on `feature/*`, `hotfix/*`; `pull_request` targeting any core branch; `workflow_dispatch` for manual ops.
+* **Stages**:
+
+  1. **Restore & Build** (fail-fast; cache deps).
+  2. **Tests** (unit+integration); publish coverage.
+  3. **Static checks**: lint, SAST, secrets, license.
+  4. **Artifact**: immutable build (e.g., Web Deploy package or zip) with `appsettings.{Environment}.json` excluded if injected at deploy time.
+  5. **Versioning**: auto SemVer from tags; write to artifact manifest and release notes.
+
+## CD (IIS via self-hosted Windows runners)
+
+* **Environments & gates**:
+
+  * `development`: auto-deploy on `develop` after CI.
+  * `staging`: auto-deploy on `staging` after CI.
+  * `uat`: manual approval gate (release manager/product).
+  * `production`: manual approval + **change ticket/ref**; require successful UAT artifact.
+* **Safety & idempotency**:
+
+  * Concurrency per env (`concurrency: deploy-prod` etc.) to prevent overlapping deploys.
+  * Health checks with automatic rollback (keep previous artifact; verify HTTP 200/health endpoint).
+* **IIS deployment steps (PowerShell)**:
+
+  * Create `app_offline.htm` to quiesce site.
+  * Deploy with **Web Deploy (msdeploy.exe)** or robocopy to the site directory.
+  * Apply environment transforms (Web.config/XDT or variable substitution).
+  * Warmup + health probe; **remove** `app_offline.htm`.
+  * Restart app pool only if needed; fail fast on non-zero exit codes.
+* **Secrets** (GitHub Environments): server host(s), site/app-pool names, publish profile or msdeploy credentials, API keys. Never commit secrets.
+
+## Releases & Documentation Parity
+
+* Tag `main` with `vX.Y.Z`; generate **GitHub Release** from artifact + checksums + changelog.
+* Maintain `docs/<version>`: release notes, migration steps, rollback notes; PR into `develop` and `main`.
+* Attach infra notes: runner label, server mapping, and IIS site names per environment.
+
+## Minimal Workflow Skeleton (excerpt)
+
+```yaml
+name: ci-cd
+on:
+  pull_request:
+    branches: [develop, staging, uat, main]
+  push:
+    branches: ['feature/*','hotfix/*','release/*']
+  workflow_dispatch:
+
+jobs:
+  ci:
+    runs-on: windows-self-hosted
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with: { dotnet-version: '8.0.x' }
+      - run: dotnet restore && dotnet build --configuration Release
+      - run: dotnet test --configuration Release --collect:"XPlat Code Coverage"
+      - name: Package
+        run: pwsh ./scripts/deploy/package.ps1 -Output "/a/build/app.zip"
+
+  deploy:
+    needs: ci
+    if: github.ref == 'refs/heads/develop' || github.ref == 'refs/heads/staging' || github.ref == 'refs/heads/uat' || github.ref == 'refs/heads/main'
+    environment: ${{ github.ref_name }}     # maps to environments named develop/staging/uat/main
+    concurrency: deploy-${{ github.ref_name }}
+    runs-on: windows-self-hosted
+    steps:
+      - uses: actions/download-artifact@v4
+      - name: Deploy to IIS
+        run: pwsh ./scripts/deploy/deploy-iis.ps1 -Package "/a/build/app.zip" -Site $env:IIS_SITE -AppPool $env:IIS_APP_POOL
+```
+
+## Do
+
+* Keep env branches long-lived and **only** advance via PRs; enforce required checks and approvals.
+* Use immutable artifacts: the **same** artifact that passed CI flows to staging → UAT → prod.
+* Use environment-scoped secrets; rotate periodically and audit access.
+* Document every release in `docs/<version>` and link from GitHub Releases.
+* After hotfix to `main`, **parity merge back** down to keep branches aligned.
+
+## Don’t
+
+* Don’t allow direct pushes, force-pushes, or branch deletes on core branches.
+* Don’t rebuild different artifacts per environment (avoid “works on staging not prod” drift).
+* Don’t store publish profiles or server creds in the repo.
+* Don’t bypass UAT/prod approvals or concurrency protections.
+
+## Guardrails (destructive ops)
+
+* Deployment scripts must **dry-run** when `-WhatIf` is set; require `-Confirm:$true` for stop/restart operations.
+* Always back up current site (snapshot or previous artifact) and provide `rollback.ps1`.
+* Block deploys if health checks fail; auto-restore previous artifact.
+
+## Sanity Checks
+
+* Are `develop`, `staging`, `uat`, `main` protected with required checks and approvals?
+* Does each workflow use **environment** gates and **concurrency**?
+* Can you promote the **same artifact** through all envs?
+* Do hotfixes parity-merge to lower branches within 24h?
+* Are docs and release notes updated (`docs/<version>`, `RELEASE_NOTES.md`)?

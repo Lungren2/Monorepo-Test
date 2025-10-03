@@ -1,0 +1,62 @@
+---
+description: Require a README.md in every relevant directory and subdirectory; define exclusions, minimum contents, and a lightweight verification hook
+globs: ["**/*"]
+alwaysApply: true
+contextPriority: high
+relatedRules: ["general-styling", "meta-rules"]
+keywords: ["readme", "documentation", "directory-structure"]
+lastUpdated: "2025-01-03"
+---
+
+# Directory Docs: README in Every Relevant Folder
+
+## When to apply
+
+* Any time you create, move, or add files to a directory that’s part of the codebase or operational assets.
+* To add a Markdown file to a solution using dotnet commands, you can simply create the Markdown file in your directory and then use the command: dotnet sln add <path_to_markdown_file>
+
+## Do
+
+* **Scope (“relevant”):** Add a `README.md` to any directory that contains source, configs, scripts, checked-in assets, or serves as a module/package boundary.
+* **Minimum sections (keep it terse):**
+
+  * **Purpose:** what lives here and why (1–3 sentences).
+  * **Key files / entry points:** bullets with relative paths.
+  * **How to use:** run/test/build notes if applicable.
+  * **Links:** parent/child READMEs, ADRs, external docs.
+* **Subdirectory index:** In each parent `README.md`, include a short “Subdirectories” list linking to child READMEs.
+* **Consistent filename:** Prefer `README.md` (not `Readme.md`/`readme.md`).
+
+## Don’t
+
+* **No READMEs** in excluded dirs: third-party or generated outputs (e.g., `node_modules/`, `.git/`, `.cache/`, `.turbo/`, `dist/`, `build/`, `.next/`, `coverage/`, `bin/`, `obj/`).
+* **Don’t duplicate prose** across levels—link upward/downward instead.
+* **Don’t over-document:** if a folder is temporary or empty, delete it or add a `.gitkeep` with a one-liner (no full README).
+
+## Lightweight verification (CI/Pre-commit)
+
+* Add a repo script that **fails** if any non-excluded directory containing code/config files lacks a `README.md`.
+* Guardrail note: implement this as a small script (e.g., `scripts/verify-readmes.(js|ts|py)`) and run it in CI; confirm exclusions match the list above. For shell users, a safe “report only” starter is acceptable—promote to CI once tuned.
+
+## Canonical example
+
+```
+/features/auth/
+  README.md      # Purpose, entry points (LoginForm.tsx, useAuth.ts), links to /api/auth
+  LoginForm.tsx
+  useAuth.ts
+  /api/
+    README.md    # Describes API client boundaries + error handling policy
+    client.ts
+```
+
+## See also
+
+* **Style & Structure** → “Front-End Project Organization: Each folder must include a `README.md`.” 
+
+---
+
+### Sanity checks
+
+* Will a new contributor understand this folder in under a minute?
+* Does the parent README link here, and does this README link back up?

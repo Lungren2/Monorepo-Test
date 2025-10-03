@@ -1,0 +1,132 @@
+---
+description: Server-first Next.js App Router rule using RSC by default with Tailwind v4, shadcn/ui, Zod, TanStack Query, Zustand, and robust a11y/perf guardrails
+globs: ["apps/web/**", "src/**", "app/**"]
+alwaysApply: false
+contextPriority: beginning
+relatedRules: ["dependencies/typescript-best-practices", "dependencies/tailwind-best-practices", "dependencies/next/self-hosted"]
+keywords: ["rsc", "server-component", "nextjs", "app-router", "hydration"]
+lastUpdated: "2025-01-03"
+---
+
+# Next.js App Router: Server-First Architecture
+
+## When to apply
+
+* Building or refactoring routes, layouts, data-fetching, forms, charts, tables, or providers in the App Router codebase.
+* Choosing rendering strategy, state management, validation, and streaming boundaries.
+
+## Do
+
+* **Prefer RSC**: Keep reads in Server Components; add `"use client"` only for hooks, browser APIs, or interactivity.
+* **Cache intentionally**: `cache: "force-cache"` for static reads; `next: { revalidate }` for ISR; `cache: "no-store"` for real-time; tag with `next: { tags: [...] }` and revalidate via `revalidatePath` / `revalidateTag`.
+* **Stream well**: Use `segment/loading.tsx` and `<Suspense>` for skeleton-first, non-blocking shells.
+* **Mutate on the server**: Use Server Actions or Route Handlers; after writes, revalidate paths/tags instead of manually nudging client caches.
+* **Use TanStack Query (v5) only for client server-state**: background refetch, optimistic updates, and multi-component sharing. Prefetch on server + `HydrationBoundary` when first paint must be warm.
+* **Validate with Zod** at every boundary (params, body, search, env). Share schemas under `lib/schemas`.
+* **Keep providers tight**: centralize `ThemeProvider`, QueryClient, and Toaster in a single client island mounted by `app/layout.tsx`.
+* **Performance hygiene**: first-load JS ≤ ~200KB per route group; prefer RSC and island hydration; use `next/image` and `next/font`.
+* **A11y defaults**: keyboard paths, proper labels, `:focus-visible`, WCAG AA contrast; zero Axe violations on critical flows.
+* **Observability & safety**: segment-level `error.tsx`; wrap interactive client islands with an error boundary that logs to Sentry/Otel. Use `instrumentation.ts`.
+* **Security**: validate env via envx schema (see `.cursor/rules/security/secrets-management.mdc`); strict CSP; avoid `dangerouslySetInnerHTML`; keep secrets server-only.
+* **UX feedback**: keep toasts short (`sonner`); use accessible Radix overlays (via shadcn/ui).
+* **Data display**: wrap Recharts and TanStack Table with small adapters for consistent responsive behavior and empty states.
+
+## Don’t
+
+* Don’t overuse `"use client"` or global contexts for read paths.
+* Don’t wrap `fetch` in ways that break Next request memoization/caching.
+* Don’t ship monolithic providers across the whole app without need.
+* Don’t rely on stale client caches after writes—always revalidate server caches.
+* Don’t add bespoke CSS when Tailwind v4 utilities or `@theme` tokens suffice.
+
+## Minimal, canonical examples
+
+**ISR + taggable read (RSC):**
+
+```ts
+// app/dashboard/page.tsx
+export const revalidate = 300; // 5 min
+export default async function Page() {
+  const res = await fetch(process.env.API + "/stats", {
+    next: { revalidate, tags: ["stats"] },
+  });
+  const data = await res.json();
+  return <Stats data={data} />; // Server-rendered
+}
+```
+
+**Prefetch + hydrate for interactive client list:**
+
+```ts
+// app/users/page.tsx (Server)
+import { HydrationBoundary, dehydrate, QueryClient } from "@tanstack/react-query";
+import { UsersClient } from "./users-client";
+import { getUsers } from "@/lib/server/users";
+export default async function Page() {
+  const qc = new QueryClient();
+  await qc.prefetchQuery({ queryKey: ["users"], queryFn: getUsers });
+  return <HydrationBoundary state={dehydrate(qc)}><UsersClient /></HydrationBoundary>;
+}
+```
+
+```ts
+// app/users/users-client.tsx (Client)
+"use client";
+import { useQuery } from "@tanstack/react-query";
+import { getUsers } from "@/lib/server/users";
+export function UsersClient() {
+  const { data, isLoading, error } = useQuery({ queryKey: ["users"], queryFn: getUsers });
+  // render list + controls; show skeleton/fallbacks as needed
+}
+```
+
+**Client mutation with optimistic update + server revalidation:**
+
+```ts
+import { useMutation, useQueryClient } from "@tanstack/react-query";
+export function useRenameUser() {
+  const qc = useQueryClient();
+  return useMutation({
+    mutationFn: async (input: { id: string; name: string }) => {
+      "use server"; // or call a route handler
+      const res = await fetch(`/api/users/${input.id}`, { method: "PATCH", body: JSON.stringify(input) });
+      if (!res.ok) throw new Error("Update failed");
+      return res.json();
+    },
+    onMutate: async (vars) => {
+      await qc.cancelQueries({ queryKey: ["users"] });
+      const prev = qc.getQueryData(["users"]);
+      qc.setQueryData(["users"], (old: any[] = []) => old.map(u => u.id === vars.id ? { ...u, name: vars.name } : u));
+      return { prev };
+    },
+    onError: (_e, _v, ctx) => ctx?.prev && qc.setQueryData(["users"], ctx.prev),
+    onSettled: async () => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      // On server action, also call revalidateTag("users") or revalidatePath("/users")
+    },
+  });
+}
+```
+
+## Sanity checks (self-verify before merge)
+
+* Page renders server-first with zero client JS unless interactivity is required.
+* All external inputs & env validated by Zod; no `any`.
+* After a write, at least one server cache revalidation is triggered (path or tag).
+* Axe passes on target routes; keyboard flow confirmed; `:focus-visible` visible.
+* Budgets met: LCP p75 ≤ 2.5s (UAT), CLS ≤ 0.1, first-load JS ≤ 200KB.
+* `next build` is clean; no runtime console errors in prod.
+
+## See also
+
+* (Planned) `.cursor/rules/nextjs/data-fetching.mdc` — granular cache & revalidation patterns.
+* (Planned) `.cursor/rules/nextjs/forms.mdc` — RHF + Zod patterns and error UX.
+* (Planned) `.cursor/rules/observability/sentry.mdc` — error boundaries and structured logging.
+* (Planned) `.cursor/rules/security/env.mdc` — env typing, CSP, and header policy.
+
+---
+
+### Guardrails
+
+* Confirm destructive actions (migrations, wide cache invalidations) and document rollback (`revalidateTag` scope, DB backup/restore).
+* For third-party SDKs, keep them server-only; avoid leaking tokens to client (`NEXT_PUBLIC_*` only when intended).

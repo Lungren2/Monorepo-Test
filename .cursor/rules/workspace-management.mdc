@@ -1,0 +1,170 @@
+---
+description: When building, running, linting, formatting, installing, etc. using the cli
+globs: []
+alwaysApply: false
+contextPriority: medium
+relatedRules: ["dependencies", "pipelines/gh-actions"]
+keywords: ["pnpm", "monorepo", "workspace", "build", "scripts"]
+lastUpdated: "2025-01-03"
+---
+# Workspace Management for Robot-APVSYS Monorepo
+
+## Project Structure
+This is a monorepo containing:
+- **API**: .NET 9 Minimal API (`apps/api/`)
+- **Web**: Next.js application (`apps/web/`)
+- **Database**: SQL scripts and migrations (`database/`)
+- **Scripts**: Node.js utility scripts (`scripts/`)
+
+## Package Management
+- **Root Package Manager**: pnpm@10.12.4
+- **Node.js Dependencies**: Managed via pnpm workspace
+- **.NET Dependencies**: Managed via NuGet packages
+- **Package Scripts**: Centralized in root `package.json`
+
+## Available Scripts
+
+### Development
+- `pnpm dev` - Start both API and web in development mode
+- `pnpm watch:api` - Watch mode for .NET API
+- `pnpm workspace` - Workspace management utilities
+
+### Build & Deploy
+- `pnpm build` - Build all applications
+- `pnpm start` - Start production applications
+- `pnpm publish:api` - Publish .NET API for deployment
+- `pnpm publish:web` - Build and export Next.js app
+
+### Code Quality
+- `pnpm format` - Format both API and web code
+- `pnpm format:api` - Format .NET code using dotnet format
+- `pnpm format:web` - Format and fix Next.js code
+- `pnpm lint` - Lint web application
+- `pnpm test` - Run tests across the workspace
+
+### Package Management
+- `pnpm add:package` - Add Node.js package to workspace
+- `pnpm add:nuget` - Add NuGet package to .NET API
+- `pnpm remove:package` - Remove Node.js package
+- `pnpm remove:nuget` - Remove NuGet package
+- `pnpm packages:list` - List all packages in workspace
+
+### Maintenance
+- `pnpm install` - Install all dependencies
+- `pnpm restore` - Restore .NET packages
+- `pnpm clean` - Clean build artifacts
+
+## Workspace Configuration
+- **Husky**: Git hooks for code quality
+- **Lint-staged**: Pre-commit linting for staged files
+- **Prettier**: Code formatting for web and config files
+- **Concurrently**: Run multiple commands simultaneously
+
+## Development Workflow
+1. Use `pnpm dev` to start development environment
+2. Use `pnpm add:package` or `pnpm add:nuget` for new dependencies
+3. Use `pnpm format` before committing changes
+4. Use `pnpm build` to verify builds before deployment
+
+## File Organization
+- Keep API-related files in `apps/api/`
+- Keep web-related files in `apps/web/`
+- Use `scripts/` for custom Node.js utilities
+- Database files go in `database/`
+- Shared configuration in root directory
+
+## Utility Scripts Flags & Options
+
+### Development Scripts
+- **`pnpm dev`** - Interactive development server selection
+  - `--api, -a` - Run only the API development server
+  - `--web, -w` - Run only the Web development server
+  - `--help, -h` - Show help message
+  - No flags: Interactive menu to select services
+
+### Build Scripts
+- **`pnpm build`** - Interactive build selection
+  - `--api, -a` - Build only the API
+  - `--web, -w` - Build only the Web application
+  - `--help, -h` - Show help message
+  - No flags: Interactive menu to select applications
+
+### Start Scripts
+- **`pnpm start`** - Interactive production start selection
+  - `--api, -a` - Start only the API server
+  - `--web, -w` - Start only the Web application
+  - `--help, -h` - Show help message
+  - No flags: Interactive menu to select applications
+
+### Clean Scripts
+- **`pnpm clean`** - Interactive cleanup selection
+  - `--api, -a` - Clean only the API (bin, obj directories)
+  - `--web, -w` - Clean only the Web application (.next, node_modules)
+  - `--all, -A` - Clean everything (API, Web, and root node_modules)
+  - `--help, -h` - Show help message
+  - No flags: Interactive menu to select cleanup options
+
+### Test Scripts
+- **`pnpm test`** - Interactive test selection
+  - `--api, -a` - Run tests only for the API
+  - `--web, -w` - Run tests only for the Web application
+  - `--help, -h` - Show help message
+  - No flags: Interactive menu to select tests
+
+### Package Management Scripts
+- **`pnpm add:package`** - Add Node.js package
+  - Usage: `pnpm add:package <package-name> <workspace-name> [--dev]`
+  - `--dev` - Add as development dependency
+  - Workspaces: `web` (Next.js app)
+
+- **`pnpm add:nuget`** - Add .NET NuGet package
+  - Usage: `pnpm add:nuget <package-name> <workspace-name> [--version=<version>]`
+  - `--version=<version>` - Specify package version
+  - Workspaces: `api` (.NET API)
+
+- **`pnpm remove:package`** - Remove Node.js package
+  - Usage: `pnpm remove:package <package-name> <workspace-name>`
+
+- **`pnpm remove:nuget`** - Remove .NET NuGet package
+  - Usage: `pnpm remove:nuget <package-name> <workspace-name>`
+
+- **`pnpm packages:list`** - List all workspaces with their types
+
+### Workspace Management Scripts
+- **`pnpm workspace`** - Workspace management utility
+  - `--list, -l` - List all workspaces
+  - `--add, -a` - Add a new workspace (interactive)
+  - `--remove, -r` - Remove a workspace (interactive)
+  - `--help, -h` - Show help message
+  - No flags: Interactive menu
+
+### Dependency Management Scripts
+- **`pnpm install`** - Install dependencies for all workspaces
+  - Automatically detects Node.js and .NET projects
+  - Installs pnpm packages and restores NuGet packages
+
+- **`pnpm restore`** - Alias for install (restores .NET packages)
+
+### Advanced Dependency Management
+The dependency manager supports additional commands:
+- `deps install` - Install dependencies for all workspaces
+- `deps install:clean` - Clean install (clean artifacts first)
+- `deps update` - Update dependencies across all workspaces
+- `deps outdated` - Check for outdated dependencies
+- `deps audit` - Security audit for all packages
+- `deps clean` - Clean build artifacts
+
+## Interactive Features
+Most utility scripts provide interactive menus when no flags are specified:
+- **Development**: Choose between API only, Web only, or both
+- **Build**: Select which applications to build
+- **Start**: Choose production applications to start
+- **Clean**: Select cleanup scope (API, Web, or everything)
+- **Test**: Choose which test suites to run
+- **Workspace**: Interactive workspace management menu
+
+## Error Handling
+- All scripts provide clear error messages and exit codes
+- Failed operations don't prevent other operations from completing
+- Interactive menus validate input and provide helpful error messages
+- Process termination (Ctrl+C) is handled gracefully across all scripts

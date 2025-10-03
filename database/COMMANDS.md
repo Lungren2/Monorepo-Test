@@ -1,8 +1,13 @@
-# COMMANDS
+# Database Commands
 
-All commands run from the repo root with Nx.
-Flyway configuration is read from `database/flyway.db.conf` (not committed).
-Windows Authentication is required in the URL (e.g., `integratedSecurity=true`).
+## Overview
+
+This project uses **Flyway** for database migrations with support for both **PostgreSQL** (primary) and **SQL Server** (on-prem integration).
+
+### Configuration
+
+Flyway configuration is read from `database/flyway.conf` (gitignored for security).
+Copy `database/flyway.conf.template` to `database/flyway.conf` and update with your credentials.
 
 ```powershell
 nx run db:<target>
@@ -12,13 +17,36 @@ nx run db:<target>
 
 ## Prerequisites
 
-- SQL Server is reachable over TCP on your fixed port.
-- `database/flyway.db.conf` exists locally, for example:
+### PostgreSQL (Primary)
 
-  ```conf
-  flyway.url=jdbc:sqlserver://localhost:2458;databaseName=WFG_ROBOT_SYSAPV;encrypt=true;trustServerCertificate=true;integratedSecurity=true
-  flyway.locations=filesystem:database/sql
-  ```
+- PostgreSQL 14+ installed and running
+- Database created: `createdb robot_template`
+- `database/flyway.conf` configured with PostgreSQL connection
+
+Example `flyway.conf` for PostgreSQL:
+
+```conf
+flyway.url=jdbc:postgresql://localhost:5432/robot_template
+flyway.user=postgres
+flyway.password=your_password
+flyway.locations=filesystem:database/sql
+flyway.schemas=public
+```
+
+### SQL Server (On-prem Integration)
+
+- SQL Server 2019+ accessible
+- `database/flyway.conf` configured with SQL Server connection
+
+Example `flyway.conf` for SQL Server:
+
+```conf
+flyway.url=jdbc:sqlserver://localhost:1433;databaseName=robot_template;encrypt=true;trustServerCertificate=true
+flyway.user=sa
+flyway.password=your_password
+flyway.locations=filesystem:database/sql
+flyway.schemas=dbo
+```
 
 ---
 

@@ -1,0 +1,31 @@
+---
+description: Ensure consistent use of NSwag for generating OpenAPI clients and server stubs
+globs: ["**/*.csproj"]
+alwaysApply: false
+contextPriority: low
+relatedRules: ["api-general-guidelines"]
+keywords: ["nswag", "openapi", "code-generation", "client-generation"]
+lastUpdated: "2025-01-03"
+---
+
+# NSwag Usage
+
+## When to apply
+
+* When configuring or updating the `NSwag.MSBuild`/`NSwag.CodeGeneration.CSharp` NuGet packages in `.csproj` files.
+* When generating or maintaining OpenAPI clients/server stubs in .NET projects.
+
+## Do
+
+* Pin NSwag NuGet versions explicitly in `.csproj` to avoid drift between environments.
+* Generate client code **from a committed OpenAPI spec** (YAML/JSON in repo), not from live endpoints.
+* Check generated code into source control for reproducibility and review.
+* Use partial classes and interfaces to extend generated clients instead of modifying generated code directly.
+* Configure namespace mappings in `.nswag` or `.csproj` to keep generated code in a dedicated folder (e.g. `Generated/Clients`).
+* Run code generation in CI/CD pipelines to verify generated files are up-to-date.
+
+## Don’t
+
+* Don’t modify generated client classes directly—regenerate instead.
+* Don’t rely on implicit version updates of the NSwag package; this can silently change generated output.
+* Don’t commit machine-specific paths in `.nswag` configs—keep them relative to the repo root.

@@ -1,0 +1,349 @@
+---
+description: Decision framework for authentication architecture in IIS + Next.js + .NET deployments
+globs: []
+alwaysApply: false
+contextPriority: high
+relatedRules: ["security/authorization", "security/header-configurations", "api-general-guidelines", "dependencies/next/self-hosted"]
+keywords: ["authentication", "iis", "bff", "jwt", "cors", "session-cookies"]
+lastUpdated: "2025-01-03"
+---
+
+# Authentication Patterns for IIS + Next.js + .NET
+
+## When to apply
+
+Use this rule when **planning authentication architecture** for a new project or reviewing deployment patterns for an existing one.
+
+## Core Deployment Patterns
+
+### Pattern A: Same-Origin (Single IIS Site) — Default
+
+**Architecture:**
+- Single IIS site (e.g., `https://yourapp.com`)
+- Root: Reverse proxy to Next.js on `:3000` via ARR
+- `/api` sub-application: ASP.NET Core Module (ANCM) in-process
+
+**Authentication:**
+- Session cookies + CSRF tokens
+- First-party cookie, `SameSite=Lax` or `Strict`
+- Credentials flow through same origin
+
+**CORS:**
+- Not needed (same scheme+host+port)
+
+**Best for:**
+- Internal applications
+- Single trusted web client
+- Simple deployment model
+- No external API consumers
+
+**IIS Configuration:**
+```xml
+<!-- Root site web.config -->
+<rewrite>
+  <rules>
+    <!-- Serve static assets directly -->
+    <rule name="Skip Next static" stopProcessing="true">
+      <match url="^_next/static/.*" ignoreCase="true" />
+      <action type="None" />
+    </rule>
+    
+    <!-- Keep /api on sub-application -->
+    <rule name="Skip API" stopProcessing="true">
+      <match url="^api(/.*)?$" ignoreCase="true" />
+      <action type="None" />
+    </rule>
+    
+    <!-- Proxy everything else to Next.js -->
+    <rule name="Proxy to Next" stopProcessing="true">
+      <match url="(.*)" />
+      <action type="Rewrite" url="http://localhost:3000/{R:1}" />
+    </rule>
+  </rules>
+</rewrite>
+```
+
+---
+
+### Pattern B: Split-Origin (Separate IIS Sites)
+
+**Architecture:**
+- Two IIS sites:
+  - `https://www.yourapp.com` → Next.js via ARR
+  - `https://api.yourapp.com` → .NET API (separate site)
+
+**Authentication:**
+- JWT tokens with short TTL (15-30 min)
+- Refresh tokens stored securely (httpOnly cookie or secure storage)
+- Stateless or token introspection
+
+**CORS:**
+- Explicit origin allowlist
+- `Access-Control-Allow-Credentials: true`
+- Preflight requests for non-simple methods
+
+**Best for:**
+- Public APIs
+- Mobile applications
+- External/partner integrations
+- Independent scaling (API vs web)
+- Different security policies per service
+
+**IIS Configuration:**
+```xml
+<!-- API site web.config -->
+<system.webServer>
+  <!-- Enable CORS at IIS level (or handle in ASP.NET Core) -->
+  <httpProtocol>
+    <customHeaders>
+      <add name="Access-Control-Allow-Origin" value="https://www.yourapp.com" />
+      <add name="Access-Control-Allow-Credentials" value="true" />
+      <add name="Access-Control-Allow-Methods" value="GET, POST, PUT, DELETE, OPTIONS" />
+      <add name="Access-Control-Allow-Headers" value="Content-Type, Authorization" />
+    </customHeaders>
+  </httpProtocol>
+</system.webServer>
+```
+
+**C# CORS Setup:**
+```csharp
+builder.Services.AddCors(options =>
+{
+    options.AddDefaultPolicy(policy =>
+    {
+        policy.WithOrigins("https://www.yourapp.com", "https://yourapp.com")
+              .AllowAnyHeader()
+              .AllowAnyMethod()
+              .AllowCredentials();
+    });
+});
+```
+
+---
+
+### Pattern C: Hybrid (Trusted + Public) — Advanced
+
+**Architecture:**
+- Two IIS sites on same nodes, **same golden image**:
+  - `https://www.yourapp.com` → Next.js + `/api` sub-app (trusted, cookie auth)
+  - `https://api.yourapp.com` → Same .NET API code (public, JWT auth, IP allowlist)
+
+**Authentication:**
+- Cookies for `www` site (BFF pattern)
+- JWT for `api` site (partner/public endpoints)
+- Same codebase, different security policies per site
+
+**CORS:**
+- Not needed for `www` (same origin)
+- Explicit allowlist for `api` site
+
+**Best for:**
+- Trusted web app + limited partner integrations
+- Need public API but most traffic is first-party
+- Want to scale same artifact with different security posture
+
+**IIS Configuration:**
+
+```xml
+<!-- www site - /api sub-app web.config -->
+<location path="." inheritInChildApplications="false">
+  <system.webServer>
+    <handlers>
+      <add name="aspNetCore" path="*" verb="*" modules="AspNetCoreModuleV2" />
+    </handlers>
+    <aspNetCore processPath="dotnet" arguments="YourApi.dll" hostingModel="inprocess" />
+  </system.webServer>
+</location>
+```
+
+```xml
+<!-- api site web.config (same code, locked down) -->
+<system.webServer>
+  <!-- IP allowlist for partners -->
+  <security>
+    <ipSecurity allowUnlisted="false">
+      <add ipAddress="203.0.113.10" />  <!-- Partner A -->
+      <add ipAddress="198.51.100.42" /> <!-- Partner B -->
+      <add ipAddress="10.0.0.0/8" />    <!-- Internal network -->
+    </ipSecurity>
+    
+    <requestFiltering>
+      <verbs>
+        <add verb="POST" allowed="true" />
+        <add verb="GET" allowed="true" />
+        <add verb="PUT" allowed="false" />
+        <add verb="DELETE" allowed="false" />
+      </verbs>
+    </requestFiltering>
+  </security>
+  
+  <!-- Only expose specific endpoints -->
+  <rewrite>
+    <rules>
+      <rule name="Allow Health" stopProcessing="true">
+        <match url="^health$" ignoreCase="true" />
+        <action type="None" />
+      </rule>
+      <rule name="Allow Public Endpoint" stopProcessing="true">
+        <match url="^v1/partner-sync$" ignoreCase="true" />
+        <action type="None" />
+      </rule>
+      <rule name="Deny All Others" stopProcessing="true">
+        <match url=".*" />
+        <action type="CustomResponse" statusCode="404" />
+      </rule>
+    </rules>
+  </rewrite>
+  
+  <aspNetCore processPath="dotnet" arguments="YourApi.dll" hostingModel="inprocess" />
+</system.webServer>
+```
+
+---
+
+## Decision Tree
+
+```
+START: Planning authentication architecture
+│
+├─ Q1: Do you have external API consumers (partners, mobile apps, third-party)?
+│  ├─ YES → Consider Pattern B (Split-Origin) or Pattern C (Hybrid)
+│  └─ NO  → Use Pattern A (Same-Origin)
+│
+├─ Q2: Do you need independent scaling for API vs Web?
+│  ├─ YES → Use Pattern B (Split-Origin)
+│  └─ NO  → Continue
+│
+├─ Q3: Do you need different security policies (WAF, rate limits, IP restrictions)?
+│  ├─ YES → Consider Pattern C (Hybrid) if most traffic is trusted
+│  └─ NO  → Use Pattern A (Same-Origin)
+│
+├─ Q4: Will you expose public API endpoints in the future?
+│  ├─ YES → Start with Pattern A, plan migration path to Pattern B or C
+│  └─ NO  → Use Pattern A (Same-Origin)
+│
+└─ RESULT: Choose pattern and document decision
+```
+
+## Authentication Mechanism Comparison
+
+| Mechanism | Best For | Storage | Revocation | Complexity |
+|-----------|----------|---------|------------|------------|
+| **Session Cookies** | Same-origin, BFF | Server-side session store | Immediate (delete session) | Medium |
+| **JWT (short-lived)** | Stateless, multi-client | Client stores token | Delayed until expiry | Low |
+| **JWT + Refresh Token** | Balance stateless + control | httpOnly cookie for refresh | Medium (revoke refresh token) | Medium-High |
+| **Hybrid (Cookies + JWT)** | Trusted web + public API | Both patterns | Per-mechanism | High |
+
+## IIS-Specific Optimizations
+
+### Enable HTTP/3 for Performance
+```xml
+<httpProtocol>
+  <customHeaders>
+    <add name="alt-svc" value="h3=&quot;:443&quot;; ma=86400; persist=1" />
+  </customHeaders>
+</httpProtocol>
+```
+
+### ARR Streaming (for RSC/SSR)
+- Server Farms → Proxy Settings
+- Set **Response buffer threshold** to `0` (no buffering)
+- Enables Next.js streaming and Partial Prerendering
+
+### Static Asset Caching
+```xml
+<location path="_next/static">
+  <system.webServer>
+    <staticContent>
+      <clientCache cacheControlMode="UseMaxAge" cacheControlMaxAge="365.00:00:00" />
+    </staticContent>
+    <httpProtocol>
+      <customHeaders>
+        <add name="Cache-Control" value="public, max-age=31536000, immutable" />
+      </customHeaders>
+    </httpProtocol>
+  </system.webServer>
+</location>
+```
+
+## Implementation Checklist
+
+### Pattern A (Same-Origin)
+- [ ] Configure IIS site with ARR reverse proxy to Next.js
+- [ ] Add `/api` sub-application with ANCM
+- [ ] Implement session cookie authentication
+- [ ] Add CSRF protection
+- [ ] Configure static asset bypass rules
+- [ ] Enable WebSockets for RSC streaming
+- [ ] Test cookie flow (login, logout, refresh)
+
+### Pattern B (Split-Origin)
+- [ ] Configure two IIS sites (www, api)
+- [ ] Implement JWT authentication with refresh tokens
+- [ ] Configure CORS with explicit origin allowlist
+- [ ] Set up load balancer with two listeners
+- [ ] Test preflight requests
+- [ ] Verify token refresh flow
+- [ ] Document API authentication for external consumers
+
+### Pattern C (Hybrid)
+- [ ] Configure two IIS sites from same artifact
+- [ ] Implement dual authentication (cookies + JWT)
+- [ ] Configure IP allowlist on public API site
+- [ ] Use URL rewrite to expose only specific endpoints
+- [ ] Restrict HTTP verbs per endpoint
+- [ ] Test both auth flows independently
+- [ ] Document security boundaries
+
+## Security Guardrails
+
+1. **Never use wildcards with credentials**: `Access-Control-Allow-Origin: *` + `Access-Control-Allow-Credentials: true` is invalid
+2. **Always validate JWT signatures**: Use asymmetric keys (RS256) for public APIs
+3. **Short token lifetimes**: Access tokens ≤ 30 minutes, refresh tokens ≤ 7 days
+4. **Rotate secrets regularly**: JWT signing keys, session secrets
+5. **Log authentication events**: Failed logins, token refresh, privilege escalation
+6. **Rate limit auth endpoints**: Prevent brute force attacks
+7. **Use HTTPS only**: Enforce TLS 1.2+ minimum
+
+## See Also
+
+- `.cursor/rules/security/authorization.mdc` - Role-based access control patterns
+- `.cursor/rules/security/header-configurations.mdc` - Security headers (CSP, HSTS, etc.)
+- `.cursor/rules/dependencies/next/self-hosted.mdc` - Next.js IIS deployment
+- `AuthResearch.md` - Detailed IIS deployment patterns and configurations
+- `NextFasterExample.md` - Performance optimization for IIS + Next.js
+
+## Testing Patterns
+
+### Same-Origin (Pattern A)
+```typescript
+// Test cookie auth
+const res = await fetch('/api/login', {
+  method: 'POST',
+  credentials: 'include',  // Send cookies
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email, password })
+});
+// Cookie automatically set and sent on subsequent requests
+```
+
+### Split-Origin (Pattern B)
+```typescript
+// Test JWT auth with CORS
+const loginRes = await fetch('https://api.yourapp.com/auth/login', {
+  method: 'POST',
+  credentials: 'include',  // For refresh token cookie
+  headers: { 'Content-Type': 'application/json' },
+  body: JSON.stringify({ email, password })
+});
+const { accessToken } = await loginRes.json();
+
+// Use token in subsequent requests
+const dataRes = await fetch('https://api.yourapp.com/users/me', {
+  headers: { 'Authorization': `Bearer ${accessToken}` }
+});
+```
+
+---
+
+**Bottom line**: Default to **Pattern A (Same-Origin)** for simplicity. Adopt **Pattern B (Split-Origin)** when you need public APIs or independent scaling. Use **Pattern C (Hybrid)** when you want both trusted web app and limited public endpoints from the same codebase with different security policies.

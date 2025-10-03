@@ -1,3 +1,102 @@
 ---
-alwaysApply: true
+description: Standardize Flyway migrations for versioned changes and repeatable stored procedures, including naming, structure, and baseline management
+globs: ["database/**/*.sql"]
+alwaysApply: false
+contextPriority: medium
+relatedRules: ["database/database", "database/stored-procedures"]
+keywords: ["flyway", "migrations", "versioning", "repeatable", "baseline"]
+lastUpdated: "2025-01-03"
 ---
+
+# Flyway Migrations: Versioned & Repeatable (Stored Procedures)
+
+## When to apply
+
+* Any time you add/modify database schema or stored procedures.
+* When setting up or adjusting Flyway configuration, baselines, or CI/CD steps.
+
+## Do
+
+* **Use versioned files for one-way changes:**
+  `V<version>__<kebab-description>.sql` (e.g., `V1.2.0__create_users_table.sql`).
+  Versions are dotted numerics (`1`, `1.1`, `2.0.3`). Increment rather than editing old versions.
+* **Use repeatable files for stored procedures (one object per file):**
+  `R__sp_<schema>_<proc-name>.sql` (e.g., `R__sp_dbo_users_upsert.sql`). Checksums trigger re-run on content change.
+* **Keep objects isolated:**
+  Exactly **one** stored procedure per `R__…` file. If you update two procedures, commit two files.
+* **Write idempotent definitions:**
+  Use `CREATE OR REPLACE` / `CREATE OR ALTER` per your RDBMS. Schema-qualify names; set required session options at the top.
+* **Separate responsibilities:**
+
+  * **V** files: DDL, data fixes, breaking renames/drops, one-time data backfills.
+  * **R** files: stored procedures, views, functions (object bodies only).
+* **Order & dependencies:**
+  V scripts run in version order, then all R scripts (sorted by their description). If ordering matters across R scripts, prefix the description (e.g., `R__10_sp_util_…`, `R__20_sp_users_…`).
+* **Baselines (existing databases):**
+
+  * Establish a baseline once: configure `baselineVersion` (e.g., `1.0.0`) and `baselineDescription` (e.g., `Initial baseline`).
+  * Use `flyway baseline` or `baselineOnMigrate=true` in a controlled first run. Commit the config.
+  * Do **not** port pre-baseline changes into new V files; start from the baseline forward.
+* **Safety in CI/CD:**
+
+  * Require `-dryRunOutput` (or equivalent) for review in non-prod.
+  * Forbid `flyway clean` outside ephemeral/dev environments.
+  * Avoid `outOfOrder=true`; if ever used, document why in the PR and pin to a single release.
+* **Documentation:**
+  Add/maintain a `README.md` in `db/migration/` describing your baseline version, branching/versioning policy, and how to run migrations locally.
+
+## Don’t
+
+* Don’t edit, rename, or remove committed/applied **V** files. Create a new higher version instead.
+* Don’t bundle multiple procedures in one `R__` file or mix R objects with V logic.
+* Don’t use `R__` files for schema changes (tables, columns, indexes).
+* Don’t rely on whitespace-only edits in `R__` files—checksum changes will re-run them; keep formatting stable.
+* Don’t run destructive changes (drops/truncates) without a rollback note or backup plan in the PR.
+
+## Minimal examples
+
+**Versioned (one-time) migration**
+
+```sql
+-- file: db/migration/V1.2.0__create_users_table.sql
+CREATE TABLE dbo.Users (
+  Id INT IDENTITY(1,1) PRIMARY KEY,
+  Email NVARCHAR(320) NOT NULL UNIQUE,
+  CreatedAt DATETIME2 NOT NULL DEFAULT SYSUTCDATETIME()
+);
+```
+
+**Repeatable stored procedure (single object per file)**
+
+```sql
+-- file: db/migration/R__sp_dbo_users_upsert.sql
+-- Re-run when checksum changes
+-- SQL Server variant; adapt to your RDBMS
+CREATE OR ALTER PROCEDURE dbo.Users_Upsert
+  @Email NVARCHAR(320)
+AS
+BEGIN
+  SET NOCOUNT ON;
+  IF EXISTS (SELECT 1 FROM dbo.Users WHERE Email = @Email)
+    RETURN 0;
+  INSERT INTO dbo.Users (Email) VALUES (@Email);
+END;
+```
+
+## Configuration hints (commit these)
+
+* `flyway.locations=filesystem:db/migration`
+* `flyway.sqlMigrationPrefix=V`
+* `flyway.repeatableSqlMigrationPrefix=R`
+* `flyway.placeholderReplacement=true` (if you use placeholders)
+* Baseline (only when initializing on an existing DB):
+  `flyway.baselineVersion=1.0.0`
+  `flyway.baselineDescription=Initial baseline`
+
+## Sanity checks
+
+* Does every **procedure** live in its **own** `R__` file?
+* Did you bump the **V** version instead of editing an old file?
+* Can the `R__` file run idempotently on an already-existing object?
+* Is the baseline documented and immutable?
+* Would this apply cleanly on a fresh clone + empty DB and on an existing DB at baseline?

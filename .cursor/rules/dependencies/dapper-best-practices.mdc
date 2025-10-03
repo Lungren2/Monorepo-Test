@@ -1,0 +1,114 @@
+---
+description: Enforce high-signal Dapper practices in a .NET Minimal API for safe, fast, maintainable data access
+globs: ["**/Program.cs", "**/Data/**/*.cs", "**/Infrastructure/**/*.cs", "**/Persistence/**/*.cs", "**/*Repository*.cs"]
+alwaysApply: false
+contextPriority: high
+relatedRules: ["dependencies/npgsql-best-practices", "database/database", "domain-modeling"]
+keywords: ["dapper", "micro-orm", "parameterized-queries", "connection-pooling", "cancellation-token"]
+lastUpdated: "2025-01-03"
+---
+
+# Dapper in Minimal APIs: Guardrails & Pitfalls
+
+## When to apply
+
+* Any .NET Minimal API that executes SQL via Dapper (reads/writes, sprocs, dynamic SQL).
+* New endpoints touching persistence, refactors of repositories, or performance/security reviews.
+
+## Do
+
+* **Prefer Dapper for hot paths and read-heavy endpoints** where you want explicit SQL, minimal overhead, and no change tracking. Consider EF Core (or raw ADO.NET) for complex aggregates, rich domain mapping, and migrations; hybrid is fine (EF for writes, Dapper for reads). ([GitHub][1])
+* **Parameterize everything.** Use anonymous objects, `DynamicParameters`, or TVPs for lists/batches. Never concatenate user input into SQL. Whitelist dynamic parts like ORDER BY/column names. ([GitHub][2])
+* **Use cancellation & timeouts.** In Minimal APIs, accept `CancellationToken` and pass it via `new CommandDefinition(sql, params, cancellationToken: ct)`. Set an explicit command timeout on latency-prone queries. ([GitHub][3])
+* **Manage connections per-operation.** Create the connection where used (`using var conn = new SqlConnection(cs)`), or inject a factory. Rely on ADO.NET **connection pooling**; do **not** reuse a single open connection across requests/threads. ([Microsoft Learn][4])
+* **Select only needed columns; avoid `SELECT *`.** Align column aliases with model property names (or enable underscores mapping) to prevent silent mapping drift. `DefaultTypeMap.MatchNamesWithUnderscores = true;` at startup can help. ([GitHub][1])
+* **Stream large result sets**: for big reads, use `buffered: false` to reduce memory pressure (understand the trade-off). ([Stack Overflow][5])
+* **Batch work to cut round-trips**: use `QueryMultiple` for related reads and multi-mapping with correct `splitOn`. For very large “IN” lists, prefer TVPs (SQL Server) over parameter expansion. ([Learn Dapper][6])
+* **Use type-aware parameters for strings** via `DbString` when collation/type matters (e.g., ANSI `varchar`, fixed length, correct size) to avoid NVARCHAR(4000) pitfalls and bad plans. ([GitHub][7])
+* **Transactions**: for multi-step writes, open one connection, `BeginTransaction`, and pass the `IDbTransaction` to all Dapper calls; keep transactions short. ([Microsoft Learn][8])
+* **For bulk inserts/updates**, don’t loop `Execute` thousands of times; use TVPs or `SqlBulkCopy` (outside Dapper) when appropriate. ([Microsoft Learn][9])
+* **Consider compile-time mapping** with **DapperAOT** for critical hot paths to reduce reflection and improve mapping reliability. ([Stack Overflow][10])
+* **Leverage Dapper helpers**: anonymous params, `DynamicParameters` (incl. OUTPUT), and `SqlBuilder` for safer dynamic SQL composition. ([GitHub][2])
+
+## Don’t
+
+* **Don’t interpolate user input** into SQL strings (including string-interpolated fragments for WHERE/ORDER/LIMIT). Whitelist & map allowed values to literals or use a SQL builder. ([Microsoft Learn][11])
+* **Don’t share a single `SqlConnection` across threads/requests**; it isn’t thread-safe. ([GitHub][12])
+* **Don’t forget cancellation** (especially on long reads) or you’ll leak server work after the client disconnects. ([GitHub][13])
+* **Don’t rely on default column → property matching** when names differ; specify aliases or fix mapping (and `splitOn` for multi-mapping) to avoid partial/incorrect hydration. ([Learn Dapper][14])
+* **Don’t pass massive `IN (@ids)` lists**—parameter explosion hurts performance; switch to TVPs/bulk patterns. ([Microsoft Learn][9])
+
+## Canonical Minimal API example (safe, cancelable, mapped)
+
+```csharp
+app.MapGet("/orders/{id:int}", async (int id, IConfiguration cfg, CancellationToken ct) =>
+{
+    await using var conn = new SqlConnection(cfg.GetConnectionString("Sql"));
+    const string sql = @"
+        select o.Id, o.Number, o.CreatedUtc, c.Id as CustomerId, c.Name as CustomerName
+        from dbo.Orders o
+        join dbo.Customers c on c.Id = o.CustomerId
+        where o.Id = @Id";
+
+    // Explicit aliases align with properties; cancellation + timeout via CommandDefinition
+    var cmd = new CommandDefinition(
+        sql,
+        new { Id = id },
+        cancellationToken: ct,
+        commandTimeout: 15);
+
+    // Small result: buffered (default). For big reads: buffered: false.
+    var order = await conn.QuerySingleOrDefaultAsync<OrderDto>(cmd);
+    return order is null ? Results.NotFound() : Results.Ok(order);
+});
+```
+
+* Rationale: per-call connection (pooling friendly), explicit columns/aliases, parameterized input, cancellation & timeout, minimal allocation. ([Microsoft Learn][4])
+
+## High-signal pitfalls checklist
+
+* [ ] Query builds include **no** string-concatenated user input; dynamic ORDER BY uses a whitelist.
+* [ ] Endpoints accept `CancellationToken` and pass it through `CommandDefinition`.
+* [ ] Large reads use `buffered:false` and project only needed columns.
+* [ ] Multi-mapping specifies `splitOn` explicitly.
+* [ ] Lists/batches use **TVPs** (SQL Server) or provider-specific bulk APIs.
+* [ ] String params use `DbString` when ANSI/fixed-length/size influence plan selection.
+* [ ] Transactions are short, explicit, and passed to each Dapper call.
+* [ ] No shared `SqlConnection` across threads; connections are scoped per operation.
+
+---
+
+### Notes & references
+
+* Dapper overview & APIs; query caching; parameterization patterns. ([GitHub][2])
+* Buffered vs unbuffered; trade-offs. ([Stack Overflow][5])
+* Query batching with `QueryMultiple`; multi-mapping and `splitOn`. ([Learn Dapper][6])
+* TVPs for efficient lists/batches (SQL Server). ([Microsoft Learn][9])
+* Cancellation via `CommandDefinition` and current support caveats. ([GitHub][3])
+* Connection pooling defaults; correct connection lifetime. ([Microsoft Learn][4])
+* Thread-safety: don’t share a `SqlConnection` concurrently. ([GitHub][12])
+* `DbString` to avoid NVARCHAR(4000) and plan regressions. ([GitHub][7])
+* DapperAOT for ahead-of-time mapping on hot paths. ([Stack Overflow][10])
+
+---
+
+### Sanity checks (before merge)
+
+* If EF Core coexists, confirm **one source of truth** per operation (no mixed unit-of-work).
+* Log SQL + parameters safely (PII-aware) for diagnostics; never log secrets.
+* Add load tests for endpoints changed to `buffered:false` to validate throughput and connection usage.
+
+[1]: https://github.com/DapperLib/Dapper/blob/main/docs/readme.md?utm_source=chatgpt.com "Dapper/docs/readme.md at main · DapperLib/Dapper · GitHub"
+[2]: https://github.com/DapperLib/Dapper?utm_source=chatgpt.com "GitHub - DapperLib/Dapper: Dapper - a simple object mapper for .Net"
+[3]: https://github.com/DapperLib/Dapper/issues/1938?utm_source=chatgpt.com "Add CancellationToken optional parameter to all Async methods"
+[4]: https://learn.microsoft.com/en-us/dotnet/framework/data/adonet/sql-server-connection-pooling?utm_source=chatgpt.com "SQL Server Connection Pooling - ADO.NET | Microsoft Learn"
+[5]: https://stackoverflow.com/questions/12697509/what-does-the-buffered-parameter-do-in-dapper-dot-net?utm_source=chatgpt.com "What does the buffered parameter do in Dapper dot net?"
+[6]: https://www.learndapper.com/dapper-query/selecting-multiple-results?utm_source=chatgpt.com "Dapper QueryMultiple, QueryMultipleAsync"
+[7]: https://github.com/DapperLib/Dapper/blob/main/Dapper/DbString.cs?utm_source=chatgpt.com "Dapper/Dapper/DbString.cs at main · DapperLib/Dapper · GitHub"
+[8]: https://learn.microsoft.com/en-us/dotnet/framework/data/adonet/transactions-and-concurrency?utm_source=chatgpt.com "Transactions and Concurrency - ADO.NET | Microsoft Learn"
+[9]: https://learn.microsoft.com/en-us/dotnet/framework/data/adonet/sql/table-valued-parameters?utm_source=chatgpt.com "Table-Valued Parameters - ADO.NET | Microsoft Learn"
+[10]: https://stackoverflow.com/questions/73564186/pass-multiple-parameters-into-dapper-query-using-queryasync?utm_source=chatgpt.com "Pass multiple parameters into Dapper query using QueryAsync"
+[11]: https://learn.microsoft.com/en-us/sql/connect/ado-net/sql/writing-secure-dynamic-sql?view=sql-server-ver17&utm_source=chatgpt.com "Writing secure dynamic SQL in SQL Server - learn.microsoft.com"
+[12]: https://github.com/dotnet/SqlClient/discussions/3221?utm_source=chatgpt.com "Thread safety of Microsoft.Data.SqlClient.SqlConnection"
+[13]: https://github.com/DapperLib/Dapper/issues/1640?utm_source=chatgpt.com "Queryasync method CancellationToken request cancellation, DAPPER will ..."
+[14]: https://www.learndapper.com/relationships?utm_source=chatgpt.com "Dapper Relationship, SplitOn, One-To-Many, One-to-One"

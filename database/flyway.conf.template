@@ -1,0 +1,41 @@
+# Flyway Configuration Template
+# Copy this file to flyway.conf and update with your credentials
+# flyway.conf is gitignored for security
+
+# ===================================
+# PostgreSQL (Primary)
+# ===================================
+flyway.url=jdbc:postgresql://localhost:5432/robot_template
+flyway.user=postgres
+flyway.password=
+flyway.locations=filesystem:database/sql
+flyway.schemas=public
+
+# ===================================
+# SQL Server (On-prem Integration)
+# ===================================
+# Uncomment and update for SQL Server:
+# flyway.url=jdbc:sqlserver://localhost:1433;databaseName=robot_template;encrypt=true;trustServerCertificate=true
+# flyway.user=sa
+# flyway.password=
+# flyway.locations=filesystem:database/sql
+# flyway.schemas=dbo
+
+# ===================================
+# Common Settings
+# ===================================
+# Validate migrations before running
+flyway.validateOnMigrate=true
+
+# Create schemas if they don't exist
+flyway.createSchemas=true
+
+# Baseline version (for existing databases)
+# flyway.baselineVersion=1
+# flyway.baselineOnMigrate=true
+
+# Placeholder replacement (optional)
+# flyway.placeholderReplacement=true
+# flyway.placeholders.environment=dev
+
+

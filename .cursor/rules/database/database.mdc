@@ -1,7 +1,11 @@
 ---
-globs: db/**,*.sql
-alwaysApply: false
 description: To be used whenever writing database or SQL code
+globs: ["database/**/*.sql", "**/**/V__*.sql", "**/**/R__*.sql"]
+alwaysApply: false
+contextPriority: high
+relatedRules: ["database/migrations", "database/stored-procedures", "dependencies/npgsql-best-practices"]
+keywords: ["sql", "postgres", "schema-design", "migrations", "parameterized-queries"]
+lastUpdated: "2025-01-03"
 ---
 
 # SQL Development Ruleset

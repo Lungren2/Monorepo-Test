@@ -1,0 +1,37 @@
+---
+description: Enforce safe and performant usage of the Npgsql NuGet package in .NET projects
+globs: ["**/*.csproj", "**/*.cs"]
+alwaysApply: false
+contextPriority: medium
+relatedRules: ["dependencies/dapper-best-practices", "database/database"]
+keywords: ["npgsql", "postgres", "connection-pooling", "async", "cancellation"]
+lastUpdated: "2025-01-03"
+---
+
+# Npgsql Usage Guidelines
+
+## When to apply
+
+* Any project referencing `Npgsql` in `.csproj` or directly using PostgreSQL connections in C# code.
+
+## Do
+
+* Use **connection pooling** (enabled by default) and keep connection lifetimes short; always wrap in `using` or `await using`.
+* Prefer **parameterized queries** or stored procedures to prevent SQL injection.
+* Centralize connection strings in secure configuration (e.g., environment variables, secrets manager), never hard-code.
+* Use `CancellationToken` on async queries to avoid blocking under load.
+* For bulk inserts/updates, prefer `COPY` via `NpgsqlBinaryImporter` over repeated `INSERT`.
+* Align `Npgsql` version with supported PostgreSQL server version; check [compatibility matrix](https://www.npgsql.org/doc/index.html).
+
+## Don’t
+
+* Don’t open long-lived idle connections; rely on the pool instead.
+* Don’t bypass ADO.NET abstractions unless profiling shows a real gain.
+* Don’t log full queries with sensitive values; mask or parameterize logs.
+* Don’t mix synchronous and asynchronous APIs arbitrarily — pick one strategy per context.
+
+## Sanity checks
+
+* Audit connection string handling for secrets exposure.
+* Benchmark common query paths to verify connection pool configuration (`MinPoolSize`, `MaxPoolSize`).
+* Test failover scenarios if using HA PostgreSQL (timeouts, retries).

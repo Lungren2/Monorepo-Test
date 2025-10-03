@@ -1,0 +1,152 @@
+---
+description: Keep a self-hosted Next.js App Router project fast and robust with server-first rendering, precise caching, and an ASP.NET-backed BFF.
+globs: ["**/next.config.ts", "**/app/**/*.tsx", "**/app/**/*.ts", "**/middleware.ts", "**/app/api/**/route.ts"]
+alwaysApply: false
+contextPriority: medium
+relatedRules: ["dependencies/next/server-first", "security/authentication-patterns"]
+keywords: ["iis", "self-hosted", "ppr", "caching", "arr", "bff"]
+lastUpdated: "2025-01-03"
+---
+
+# Next.js (App Router) on Self-Hosted Node with ASP.NET BFF
+
+## When to apply
+
+* Editing App Router code, Route Handlers (BFF), caching and revalidation, PPR/streaming, image config, or proxy-cache behaviors for a self-hosted Node deployment with an external ASP.NET backend.
+
+## Do
+
+* **Server-first:** Default to **Server Components**; keep `"use client"` islands tiny and purposeful.
+* **PPR/streaming:** Render the **static shell**; stream slow/personalized parts behind `<Suspense>` and provide `app/**/loading.tsx`.
+* **Segment config:** Prefer `export const dynamic = 'force-static'`; use `revalidate` per segment; reserve `force-dynamic` for truly per-request needs (e.g., auth UI).
+* **Caching:** Opt-in explicitly—`cache: 'force-cache'` or `next.revalidate`; tag all fetches and **invalidate via tags** after mutations/webhooks.
+* **BFF pattern:** Use `app/api/*` Route Handlers (runtime `'node'`) to call ASP.NET, set proxy-friendly `Cache-Control`, and centralize credentials/token forwarding.
+* **Proxy cache:** Let proxies cache static assets/`/_next/image`; keep HTML freshness in Next (ISR/Data Cache). Be explicit with `s-maxage`.
+* **Multi-instance:** Provide a **shared cache handler** (e.g., Redis) so `revalidateTag`/`revalidatePath` reach all nodes; consider disabling per-instance memory cache for consistency.
+* **Images:** Use `<Image />`, vetted `remotePatterns`, correct `sizes`, and mark LCP image `priority`.
+* **ASP.NET integration:** Configure **CORS** with explicit origins + credentials; for cross-site cookies use `SameSite=None; Secure`. Client calls that rely on cookies must set `credentials: 'include'`.
+* **Observability/budgets:** Track CWV (LCP/CLS/INP), watch bundle sizes in CI, and keep server components free of heavy UI libs.
+
+## Don’t
+
+* Don’t sprinkle `"use client"` globally or read `cookies()/headers()/searchParams` in the static shell (they force dynamic).
+* Don’t cache cookie-dependent HTML at the proxy/CDN.
+* Don’t use wildcard CORS with credentials.
+* Don’t rely on Next Image Optimization when `output: 'export'`—run Node or use a custom loader.
+* Don’t forget to tag reads or to revalidate on writes.
+
+## Canonical snippets
+
+**Enable PPR & static-first segments**
+
+```ts
+// next.config.ts
+export default { experimental: { ppr: 'incremental' } };
+
+// app/(shop)/layout.tsx
+export const experimental_ppr = true;
+
+// app/(marketing)/page.tsx
+export const dynamic = 'force-static';
+export const revalidate = 3600;
+```
+
+**Tag reads + precise invalidation**
+
+```ts
+// read
+await fetch(url, { next: { tags: ['products:list'], revalidate: 60 } });
+
+// write (Server Action or Route Handler)
+import { revalidateTag, revalidatePath } from 'next/cache';
+await revalidateTag('products:list');
+await revalidatePath('/products');
+```
+
+**BFF with proxy-friendly caching**
+
+```ts
+// app/api/products/route.ts
+export const runtime = 'node';
+export async function GET() {
+  const res = await fetch(`${process.env.API_BASE}/products`, { headers: { Authorization: `Bearer ${''}` } });
+  return new Response(await res.text(), {
+    status: res.status,
+    headers: {
+      'Content-Type': res.headers.get('content-type') ?? 'application/json',
+      'Cache-Control': 'public, max-age=0, s-maxage=600'
+    }
+  });
+}
+```
+
+**Shared Data Cache (multi-instance skeleton)**
+
+```js
+// next.config.js
+module.exports = {
+  cacheHandler: require.resolve('./cache-handler.js'),
+  cacheMaxMemorySize: 0
+};
+
+// cache-handler.js
+class CacheHandler {
+  constructor(opts) { /* connect to Redis/Memcached */ }
+  async get(key) {}
+  async set(key, data, ctx) {} // persist ctx.tags / ctx.revalidate
+  async revalidateTag(tagOrTags) {}
+  resetRequestCache() {}
+}
+module.exports = CacheHandler;
+```
+
+**Images (remote patterns)**
+
+```js
+// next.config.js
+module.exports = {
+  images: {
+    remotePatterns: [
+      { protocol: 'https', hostname: 'images.example.com' },
+      { protocol: 'https', hostname: 'cdn.myapp.com' }
+    ],
+    formats: ['image/webp'],
+    minimumCacheTTL: 60
+  }
+};
+```
+
+**ASP.NET CORS & cookies**
+
+```csharp
+// CORS
+builder.Services.AddCors(o => o.AddPolicy("WebApp", p =>
+  p.WithOrigins("https://app.example.com").AllowAnyHeader().AllowAnyMethod().AllowCredentials()
+));
+app.UseCors("WebApp");
+
+// Cookies (cross-site)
+options.Cookie.SameSite = SameSiteMode.None;
+options.Cookie.SecurePolicy = CookieSecurePolicy.Always;
+```
+
+## Sanity checks (Cursor should enforce)
+
+* [ ] Server-first; no unnecessary `"use client"`.
+* [ ] Slow widgets behind `<Suspense>` with `loading.tsx` for dynamic segments.
+* [ ] Reads use `cache: 'force-cache'`/`next.revalidate` and **tags**; mutations call `revalidateTag`/`revalidatePath`.
+* [ ] BFF responses carry explicit `Cache-Control` for proxy caches.
+* [ ] No cookie/header/searchParams usage in static shells.
+* [ ] `<Image />` with vetted `remotePatterns`; LCP image `priority`.
+* [ ] CORS explicit allow-list; cookies set for cross-site correctly.
+* [ ] For multi-instance, a **shared cache handler** is configured and documented.
+
+## Safety & tool discipline
+
+* Confirm CORS/cookie changes with security owners; avoid logging secrets/tokens.
+* Before enabling a custom cache handler in production, ensure HA for Redis/Memcached and a rollback path.
+* Treat cache invalidation endpoints and Server Actions as privileged; add auth/CSRF where appropriate.
+
+## See also
+
+* If present in your repo: `.cursor/rules/**/cors.mdc`, `.cursor/rules/**/runtime.mdc`, `.cursor/rules/**/next-image.mdc`, `.cursor/rules/**/web-vitals.mdc`.

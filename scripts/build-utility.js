@@ -9,6 +9,7 @@ const args = process.argv.slice(2);
 const flags = {
   api: args.includes('--api') || args.includes('-a'),
   web: args.includes('--web') || args.includes('-w'),
+  all: args.includes('--all') || args.includes('-A'),
   help: args.includes('--help') || args.includes('-h')
 };
 
@@ -20,6 +21,7 @@ Usage: node scripts/build-utility.js [options]
 Options:
   --api, -a     Build only the API
   --web, -w     Build only the Web application
+  --all, -A     Build all applications
   --help, -h    Show this help message
 
 If no flags are provided, you'll be prompted to select which applications to build.
@@ -71,6 +73,7 @@ Please select an option (1-4): `);
   // Use flags if provided
   const buildApi = flags.api || (!flags.api && !flags.web);
   const buildWeb = flags.web || (!flags.api && !flags.web);
+  const buildAll = flags.all || (!flags.api && !flags.web && !flags.all);
   buildApplications(buildApi, buildWeb);
 }
 
@@ -121,6 +124,28 @@ function buildApplications(buildApi, buildWeb) {
       });
     });
     buildPromises.push(webPromise);
+  }
+
+  if (buildAll) {
+    console.log('🔨 Building all applications...');
+    const allPromise = new Promise((resolve, reject) => {
+      const allProcess = spawn('pnpm', ['build'], {
+        cwd: path.join(__dirname, '../apps/all'),
+        stdio: 'inherit',
+        shell: true
+      });
+    });
+
+    allProcess.on('close', (code) => {
+      if (code === 0) {
+        console.log('✅ All builds completed successfully\n');
+        resolve();
+      } else {
+        console.log('❌ All builds failed\n');
+        reject(new Error(`All builds failed with code ${code}`));
+      }
+    });
+    buildPromises.push(allPromise);
   }
 
   // Wait for all builds to complete

@@ -6,6 +6,8 @@ using Microsoft.AspNetCore.Diagnostics.HealthChecks;
 using Serilog;
 using Serilog.Events;
 using Scalar.AspNetCore;
+using NSwag;
+using NSwag.Generation.Processors.Security;
 
 namespace api;
 
@@ -64,10 +66,34 @@ public class Program
             });
 
         builder.Services.AddHealthChecks();
+        
+        // CORS Configuration: Explicit origins per IIS deployment model
+        // For Same-Origin pattern: CORS not needed (Next.js and API on same origin)
+        // For Split-Origin: Update origins to match your deployment
         builder.Services.AddCors(options =>
         {
-            options.AddDefaultPolicy(p => p.AllowAnyOrigin().AllowAnyHeader().AllowAnyMethod());
+            options.AddDefaultPolicy(policy =>
+            {
+                // TODO: Replace with actual origins for your deployment
+                // Example for development:
+                policy.WithOrigins("http://localhost:3000", "https://localhost:3000")
+                      .AllowAnyHeader()
+                      .AllowAnyMethod()
+                      .AllowCredentials();
+                      
+                // Example for production (split-origin):
+                // policy.WithOrigins("https://www.yourapp.com", "https://yourapp.com")
+                //       .AllowAnyHeader()
+                //       .AllowAnyMethod()
+                //       .AllowCredentials();
+            });
         });
+
+        // Database Connection (PostgreSQL via Npgsql)
+        // Connection string configured in appsettings.{Environment}.json
+        // Example DI registrations (uncomment and customize as needed):
+        // builder.Services.AddScoped<IUserRepository, UserRepository>();
+        // builder.Services.AddScoped<IUserService, UserService>();
 
         var app = builder.Build();
 
@@ -80,10 +106,10 @@ public class Program
             // Don't log request/response bodies to avoid capturing sensitive data
             options.EnrichDiagnosticContext = (diagnosticContext, httpContext) =>
             {
-                diagnosticContext.Set("RequestHost", httpContext.Request.Host.Value);
+                diagnosticContext.Set("RequestHost", httpContext.Request.Host.Value ?? "Unknown");
                 diagnosticContext.Set("RequestScheme", httpContext.Request.Scheme);
-                diagnosticContext.Set("UserAgent", httpContext.Request.Headers["User-Agent"].FirstOrDefault());
-                diagnosticContext.Set("RemoteIP", httpContext.Connection.RemoteIpAddress?.ToString());
+                diagnosticContext.Set("UserAgent", httpContext.Request.Headers["User-Agent"].FirstOrDefault() ?? "Unknown");
+                diagnosticContext.Set("RemoteIP", httpContext.Connection.RemoteIpAddress?.ToString() ?? "Unknown");
                 
                 // Log user ID if authenticated (safe to log)
                 if (httpContext.User?.Identity?.IsAuthenticated == true)

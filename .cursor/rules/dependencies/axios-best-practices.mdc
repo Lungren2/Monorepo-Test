@@ -1,0 +1,118 @@
+---
+description: Enforce safe, typed, and maintainable Axios usage in TypeScript apps (prefer fetch on server)
+globs: ["**/*.ts", "**/*.tsx"]
+alwaysApply: false
+contextPriority: medium
+relatedRules: ["dependencies/typescript-best-practices", "dependencies/next/server-first"]
+keywords: ["axios", "http-client", "interceptors", "type-safety", "cancellation"]
+lastUpdated: "2025-01-03"
+---
+
+# Axios in TypeScript: Best Practices
+
+## When to apply
+
+* Any file that imports or uses `axios`.
+* Prefer the platform `fetch` in server/runtime code (e.g., Next.js Server Components, Node loaders). Use Axios **only** when you need interceptors, cancellation with progress, multipart uploads, or bespoke adapters.
+
+## Do
+
+* **Centralize the client**: create a single `axios` factory (`/src/lib/http.ts`) returning a typed `AxiosInstance` with `baseURL`, `timeout`, and sane defaults.
+* **Type responses**: call `axios.get<T>(...)` and narrow errors with `AxiosError<TErr>`. Add a thin result mapper if the API is noisy.
+* **Runtime-validate**: parse external data with a schema (e.g., `zod`) at module boundaries before using it internally.
+* **Auth via interceptors**: attach bearer tokens in a request interceptor; handle 401 refresh flow in a response interceptor with lock/queue to avoid token-storms.
+* **Cancellation**: support `AbortSignal` (`signal` option) for UI-triggered or route-teardown cancels.
+* **Timeouts & retries**: set a strict `timeout` (e.g., 10s). If retries are required, use limited, jittered backoff (e.g., `axios-retry` with `retries<=3`, `retryCondition` on idempotent methods).
+* **Idempotency**: for unsafe methods that may be retried by clients or proxies, send an idempotency key header when the API supports it.
+* **Error shape**: normalize into an app error (`{ code, message, cause?, status? }`) and log with redaction. Surface user-safe messages only.
+* **Upload/download**: use `onUploadProgress`/`onDownloadProgress` behind a small adapter so components receive simple progress events.
+* **Environment safety**: read `baseURL` and secrets from env (typed, prefixed), never hardcode tokens or keys.
+* **Testing**: mock HTTP (e.g., MSW or nock) and unit-test interceptors and error mapping.
+
+## Don’t
+
+* Don’t scatter raw `axios.get(...)` calls across components; **import the shared client**.
+* Don’t use `any` for payloads; don’t trust external data without validation.
+* Don’t perform network calls inside render paths that can run multiple times; keep them in effects, loaders, or server actions.
+* Don’t retry on non-idempotent methods by default; don’t infinite-retry; don’t swallow cancellations.
+* Don’t leak PII/secrets in errors; don’t log entire response bodies.
+
+## Minimal Canonical Example
+
+```ts
+// src/lib/http.ts
+import axios, { AxiosError, AxiosInstance } from "axios";
+
+export const createHttp = (opts?: { baseURL?: string; getToken?: () => string | undefined }): AxiosInstance => {
+  const instance = axios.create({
+    baseURL: opts?.baseURL ?? process.env.NEXT_PUBLIC_API_URL ?? process.env.API_URL,
+    timeout: 10_000,
+    withCredentials: false,
+  });
+
+  instance.interceptors.request.use(cfg => {
+    const token = opts?.getToken?.();
+    if (token) cfg.headers.Authorization = `Bearer ${token}`;
+    return cfg;
+  });
+
+  let refreshing = false;
+  let waiters: Array<() => void> = [];
+
+  instance.interceptors.response.use(
+    res => res,
+    async err => {
+      const e = err as AxiosError<{ error?: string; message?: string }>;
+      const status = e.response?.status;
+
+      // Example guarded refresh (pseudo)
+      if (status === 401 && !e.config?.__isRetryRequest) {
+        if (!refreshing) {
+          refreshing = true;
+          try {
+            await refreshToken(); // implement elsewhere
+            waiters.forEach(w => w());
+          } finally {
+            refreshing = false;
+            waiters = [];
+          }
+        } else {
+          await new Promise<void>(r => waiters.push(r));
+        }
+        e.config!.__isRetryRequest = true;
+        return instance(e.config!);
+      }
+
+      // Normalize error
+      const appError = {
+        code: status ?? 0,
+        message: e.response?.data?.message || e.message || "Request failed",
+        status,
+      };
+      return Promise.reject(appError);
+    }
+  );
+
+  return instance;
+};
+
+// Usage
+// const http = createHttp({ getToken: () => authStore.token });
+// const res = await http.get<User>("/me", { signal });
+```
+
+> **Server-side note (Next.js/Node)**: Use `fetch` for server code to leverage built-in caching, request dedupe, and streaming. Keep Axios to client-side or Node utilities where interceptors/progress are required.
+
+## Guardrails
+
+* **Security**: redact tokens and PII in logs; restrict CORS at the server; enforce HTTPS.
+* **Destructive endpoints**: require explicit UI confirmation and double-submit prevention; never auto-retry `POST/PUT/PATCH/DELETE` unless idempotent and designed for it.
+* **SSR/Edge**: avoid Axios in Edge runtimes where Node adapters may fail; prefer `fetch` or an Edge-compatible adapter.
+
+## Sanity Checks
+
+* Is there a single exported `AxiosInstance` factory?
+* Are all calls typed (`<T>`) and validated at boundaries?
+* Do errors conform to the normalized shape?
+* Are timeouts, cancellation, and (if used) retries correctly configured?
+* Are secrets/envs sourced via typed config?

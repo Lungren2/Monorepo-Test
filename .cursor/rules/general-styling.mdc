@@ -1,0 +1,111 @@
+---
+description: Enforce project-wide style, structure, and data-access conventions
+globs: ["**/*"]
+alwaysApply: true
+contextPriority: high
+relatedRules: ["documentation", "domain-modeling", "database/database"]
+keywords: ["file-headers", "structure", "conventions", "formatting"]
+lastUpdated: "2025-01-03"
+---
+
+# Style & Structure: Headers, Folders, and Queries
+
+## When to apply
+
+* Any time you create or edit source files, organize front-end code, or write database queries/SQL.
+
+## Do
+
+* **File headers**
+
+  * Use a short banner comment at the top for agent context and human readability.
+  * Minimal template:
+
+    ```ts
+    /* =============================================================================
+     * CONTEXT: {layer}/{purpose}
+     * PATTERN: {pattern-name}
+     * DEPENDS_ON: {key dependencies}
+     * USED_BY: {common consumers}
+     * -----------------------------------------------------------------------------
+     * {One-line purpose statement}
+     * {Key constraints or gotchas}
+     * =============================================================================
+     */
+    ```
+
+  * **Examples:**
+
+    ```csharp
+    /* =============================================================================
+     * CONTEXT: infrastructure/data-access
+     * PATTERN: repository-base
+     * DEPENDS_ON: Domain.Common.IEntity, Npgsql, Dapper
+     * USED_BY: Infrastructure.Repositories.*
+     * -----------------------------------------------------------------------------
+     * Base repository for Dapper+Npgsql. Connection-per-operation, parameterized
+     * queries, CancellationToken support. Override AddAsync/UpdateAsync in derived.
+     * =============================================================================
+     */
+    ```
+
+    ```typescript
+    /* =============================================================================
+     * CONTEXT: frontend/providers
+     * PATTERN: client-boundary
+     * DEPENDS_ON: @tanstack/react-query, sonner
+     * USED_BY: app/layout.tsx
+     * -----------------------------------------------------------------------------
+     * Centralized client providers. Minimal boundary per server-first architecture.
+     * QueryClient singleton per session, Toaster for notifications.
+     * =============================================================================
+     */
+    ```
+
+  * **Note:** Cursor automatically tracks file edit recency; Created/Updated dates are no longer needed.
+* **Code structure**
+
+  * Abstract logic into small functions/methods; keep components/controllers thin.
+  * Keep files ≤ **300** lines when practical; extract helpers/modules when growing.
+  * Use consistent, ecosystem-appropriate naming (e.g., TS/JS filenames kebab-case; C#/Java types PascalCase; SQL identifiers snake_case).
+* **Front-end organization**
+
+  * Organize by **feature folders** (not by layer).
+  * Each feature folder **must include `README.md`** covering purpose, public surface (exports), and example usage.
+  * **Do not use barrel exports** (`index.ts` re-exports). Import directly from concrete files:
+
+    ```ts
+    // ✅ direct import
+    import { WidgetCard } from "@/features/widgets/components/WidgetCard";
+    // ❌ no barrel: "@/features/widgets"
+    ```
+* **Querying rules**
+
+  * Route **major database interactions through stored procedures**.
+  * Any **raw SQL must be parameterized**. Keep complex business logic in stored procedures.
+  * Prefer app code that calls a procedure or a parameterized query wrapper (no string concatenation).
+
+## Don’t
+
+* Don’t exceed ~300 lines per file without a clear reason and a refactor plan.
+* Don’t hide APIs behind barrels; make imports explicit and local.
+* Don’t embed complex business logic in ORMs/ad-hoc queries.
+* Don’t build SQL by string concatenation or interpolate untrusted values.
+
+## Minimal examples
+
+* **Feature folder skeleton**
+
+  ```
+  /features/orders/
+    README.md
+    components/OrderSummary.tsx
+    api/useOrder.ts
+    lib/calcTotals.ts
+  ```
+
+## Sanity checks
+
+* New/edited files: is a header banner helpful? If yes, add it.
+* Passing ~300 lines? Extract helpers or split by concern.
+* Creating a feature? Add/refresh its `README.md`.

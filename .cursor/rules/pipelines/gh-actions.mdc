@@ -1,3 +1,203 @@
 ---
-alwaysApply: true
+description: Define auditable, least-privilege GitHub Actions for Next.js SSR/PPR + .NET Minimal API with quality/security gates and atomic artifacts
+globs: [".github/workflows/**/*.yml", ".github/workflows/**/*.yaml", ".github/actions/**"]
+alwaysApply: false
+contextPriority: medium
+relatedRules: ["pipelines/repository-rules", "workspace-management"]
+keywords: ["github-actions", "ci-cd", "security", "codeql", "artifacts"]
+lastUpdated: "2025-01-03"
 ---
+
+# GitHub Actions: Quality, Security & Atomic CI/CD
+
+## When to apply
+
+* Creating or reviewing any workflow/composite action for this repo (build, test, scan, package, promote/deploy).
+
+## Do
+
+* **Use 1st-party actions only** by default:
+  `actions/checkout@v4`, `actions/setup-node@v4`, `actions/setup-dotnet@v4`,
+  `actions/cache@v4`, `actions/upload-artifact@v4`, `actions/download-artifact@v4`,
+  `github/codeql-action@v3`, `actions/dependency-review-action@v4`.
+* **Pin by commit SHA**, not floating tags (no `@v*` without a SHA).
+* **Least privilege**: set top-level `permissions: { contents: read }`; escalate per-job only (e.g., `deployments: write` in deploy job).
+* **Atomic, auditable flow**: separate **validate → build-artifact → promote** into distinct workflows; promotions use `workflow_run` + **Environments** (dev/staging/uat/main) with required reviewers. Reuse the **same artifact** across all stages.
+* **Code quality & security**:
+
+  * JS/TS (Next.js SSR+PPR): `npm ci --ignore-scripts`, `npm run lint`, `npm test -- --ci`, `next build` with `NEXT_TELEMETRY_DISABLED=1`.
+  * .NET Minimal API: `dotnet restore --locked-mode`, `dotnet build -c Release -warnaserror`, `dotnet test -c Release --collect:"XPlat Code Coverage"`, `dotnet list package --vulnerable --include-transitive`.
+  * **SAST**: CodeQL (languages: `javascript-typescript`, `csharp`) on PRs + a scheduled weekly run.
+  * **SCA**: `actions/dependency-review-action` on PRs; Node `npm audit --omit=dev --audit-level=high` (non-blocking warn on dev branches, blocking on protected branches).
+* **Caching**: node modules by lockfile; NuGet by `global-packages`/`~/.nuget/packages`. Keys include OS + lock hash.
+* **Artifacts**: upload immutable zips (Next.js `.next` + server files; API publish output) with manifest + checksum; `if-no-files-found: error`; retention set explicitly. Never include secrets or `.env`.
+* **Concurrency**: cancel in-progress on the same ref for CI; **do not** cancel deploy jobs.
+* **Logs hygiene**: never echo secrets; mask unexpected values with `::add-mask::`.
+* **Branch protection, not Apps**: rely on branch rules + environment reviewers. Do **not** depend on GitHub Apps for gated permissions.
+
+## Don’t
+
+* Don’t use `pull_request_target` to run untrusted code. Prefer `pull_request` and keep `GITHUB_TOKEN` read-only.
+* Don’t grant repository-wide write on the workflow; never set `permissions: write-all`.
+* Don’t use third-party actions unless explicitly vendored as a **reviewed composite** inside `.github/actions/*`.
+* Don’t rebuild per environment or mutate artifacts during promotion.
+* Don’t run formatting tasks in CI (handled by IDE/pre-commit).
+* Don’t use `npm install` or allow `postinstall` scripts in CI.
+
+## Custom composite actions (security guardrails)
+
+* Use `runs: using: "composite"`; each step specifies `shell` with strict mode (`bash -euo pipefail` or `pwsh -NoProfile -NonInteractive -ErrorAction Stop`).
+* Quote every input `"${{ inputs.foo }}"`; validate inputs (regex/allow-list). No `eval`.
+* Use `GITHUB_OUTPUT` for outputs; never echo secrets; document **required permissions** in the action README.
+* Avoid implicit privilege: the **workflow** must grant permissions; composites **cannot** elevate on their own.
+
+## Minimal, canonical workflows
+
+### 1) `ci.yml` — Validate on PR (quality + security)
+
+```yaml
+name: ci
+on:
+  pull_request:
+    branches: [develop, staging, uat, main]
+permissions: { contents: read }  # least privilege
+jobs:
+  codeql:
+    uses: github/codeql-action/.github/workflows/codeql.yml@<SHA>
+    permissions: { contents: read, security-events: write }
+    with: { languages: javascript-typescript,csharp }
+
+  validate-next:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@<SHA>
+      - uses: actions/setup-node@<SHA>
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci --ignore-scripts
+        working-directory: ./apps/web
+      - run: npm run lint
+        working-directory: ./apps/web
+      - run: npm test -- --ci
+        working-directory: ./apps/web
+
+  validate-dotnet:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/checkout@<SHA>
+      - uses: actions/setup-dotnet@<SHA>
+        with: { dotnet-version: '8.0.x' }
+      - run: dotnet restore --locked-mode
+        working-directory: ./apps/api
+      - run: dotnet build -c Release -warnaserror
+        working-directory: ./apps/api
+      - run: dotnet test -c Release --collect:"XPlat Code Coverage"
+        working-directory: ./apps/api
+      - run: dotnet list package --vulnerable --include-transitive
+        working-directory: ./apps/api
+
+  dependency-review:
+    runs-on: ubuntu-latest
+    permissions: { contents: read }
+    steps:
+      - uses: actions/dependency-review-action@<SHA>
+```
+
+### 2) `build-artifacts.yml` — Build once, store artifacts
+
+```yaml
+name: build-artifacts
+on:
+  push:
+    branches: [develop, staging, uat, main, 'release/*', 'hotfix/*']
+  workflow_dispatch:
+permissions: { contents: read }
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  next-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@<SHA>
+      - uses: actions/setup-node@<SHA>
+        with: { node-version: '20', cache: 'npm' }
+      - run: npm ci --ignore-scripts
+        working-directory: ./apps/web
+      - run: NEXT_TELEMETRY_DISABLED=1 npm run build
+        working-directory: ./apps/web
+      - name: Package Next artifact
+        run: |
+          tar -czf next-artifact.tgz -C apps/web .next package.json next.config.* public
+          shasum -a 256 next-artifact.tgz > next-artifact.tgz.sha256
+      - uses: actions/upload-artifact@<SHA>
+        with:
+          name: next-artifact
+          path: |
+            next-artifact.tgz
+            next-artifact.tgz.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  dotnet-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@<SHA>
+      - uses: actions/setup-dotnet@<SHA>
+        with: { dotnet-version: '8.0.x' }
+      - run: dotnet publish ./apps/api -c Release -o ./out
+      - name: Package API artifact
+        run: |
+          (cd out && zip -r ../api-artifact.zip .)
+          shasum -a 256 api-artifact.zip > api-artifact.zip.sha256
+      - uses: actions/upload-artifact@<SHA>
+        with:
+          name: api-artifact
+          path: |
+            api-artifact.zip
+            api-artifact.zip.sha256
+          if-no-files-found: error
+          retention-days: 14
+```
+
+### 3) `promote.yml` — Promote & deploy with environment gates
+
+```yaml
+name: promote
+on:
+  workflow_run:
+    workflows: ["build-artifacts"]
+    types: [completed]
+permissions: { contents: read, deployments: write }
+jobs:
+  promote:
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: windows-self-hosted
+    strategy:
+      matrix:
+        env: [develop, staging, uat, main]
+    environment: ${{ matrix.env }}   # reviewers/approvals per environment
+    steps:
+      - name: Fetch artifacts from the triggering run
+        uses: actions/download-artifact@<SHA>
+        with:
+          run-id: ${{ github.event.workflow_run.id }}
+          path: ./artifacts
+      - name: Verify checksums
+        run: pwsh ./scripts/verify-checksums.ps1 ./artifacts
+      - name: Deploy
+        run: pwsh ./scripts/deploy/deploy-iis.ps1 -Next ./artifacts/next-artifact.tgz -Api ./artifacts/api-artifact.zip -Env $env:EnvironmentName -Confirm:$true
+```
+
+> Replace `<SHA>` with the exact commit SHAs for each action.
+
+## Sanity checks
+
+* Is **top-level `permissions` read-only** and escalated only where needed?
+* Do PRs run **CodeQL + dependency review + tests/linters** for both stacks?
+* Are artifacts **built once** and **reused** via `workflow_run` with environment approvals?
+* Are actions **pinned by SHA** and **no third-party** used unvetted?
+* Do logs/artifacts avoid leaking secrets and include **checksums/manifests**?
+

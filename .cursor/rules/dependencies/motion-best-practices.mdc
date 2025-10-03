@@ -1,0 +1,108 @@
+---
+description: Use Motion for React to implement accessible, performant UI animations in our React/Next.js codebase
+globs: ["**/*.tsx", "**/*.jsx"]
+alwaysApply: false
+contextPriority: medium
+relatedRules: ["dependencies/next/server-first"]
+keywords: ["motion", "animations", "framer-motion", "accessibility", "reduced-motion"]
+lastUpdated: "2025-01-03"
+---
+
+# Motion for React: Animation Rule
+
+## When to apply
+
+* Any time you add or review animations in React/Next.js using the `motion` API (`motion.div`, `AnimatePresence`, `MotionConfig`, variants, layout animations, etc.). Start here for defaults; escalate to custom logic only when this can’t meet UX or perf needs. ([Motion][1])
+
+## Do
+
+* **Install & import correctly**
+
+  * Use the official package and React entry:
+    `import { motion, AnimatePresence, MotionConfig } from "motion/react"` . ([Motion][1])
+  * **Next.js App Router**: put Motion usage in a Client Component (add `"use client"` at the top) when you use interactive Motion APIs. ([Motion][2])
+* **Prefer transform/opacity** for 60 fps: animate `transform` and `opacity` over layout-affecting properties. Use `transition` for timing and springs for feel. ([Motion][3])
+* **Orchestrate with variants** to control groups and apply `stagger` for sequences (cleaner than manual timers). ([Motion][4])
+* **Handle enters/exits** with `AnimatePresence`; give children **stable, unique** `key`s; pick a mode (`sync | wait | popLayout`) intentionally. ([Motion][5])
+* **Use layout animations** for position/size changes:
+
+  * `layout` for automatic FLIP transitions.
+  * `layoutId` for shared element (“magic move”) transitions; group related elements with `LayoutGroup`. ([Motion][6])
+* **Global config with `MotionConfig`**:
+
+  * Set app-wide `transition` defaults.
+  * Respect reduced motion via `reducedMotion` (`"user" | "always" | "never"`).
+  * Pass CSP `nonce` here if your site uses a strict CSP. ([Motion][7])
+* **Prefer motion values** over React state for animated styles to avoid re-renders (`useMotionValue`, `useTransform`). ([Motion][8])
+* **Accessibility**
+
+  * Honor user settings with `reducedMotion`/`useReducedMotion`; provide non-motion fallbacks. ([Motion][9])
+* **SSR/Client boundaries (Next.js)**
+
+  * Keep pages/layouts as Server Components; isolate interactive animation into small Client islands to avoid hydrating large trees. ([Next.js][10])
+
+## Don’t
+
+* ❌ Convert whole routes to Client Components just to add a small animation—wrap only the animated leaf. ([Next.js][10])
+* ❌ Animate expensive properties (`width`, `height`, `top/left`) unless using `layout`; even then prefer transforms when visually equivalent. ([Motion][6])
+* ❌ Trigger exit animations without `AnimatePresence`, or reuse array indexes as keys (breaks exits). ([Motion][5])
+* ❌ Fight the engine with manual timeouts; use `variants`, `stagger`, and `transition` instead. ([Motion][4])
+* ❌ Ignore reduced-motion—this is an accessibility regression. ([Motion][9])
+
+## Canonical example (minimal)
+
+```tsx
+"use client"
+import { motion, AnimatePresence, MotionConfig } from "motion/react"
+
+export default function Toast({ open, children }: { open: boolean; children: React.ReactNode }) {
+  return (
+    <MotionConfig reducedMotion="user" transition={{ duration: 0.25, ease: "easeInOut" }}>
+      <AnimatePresence mode="popLayout">
+        {open && (
+          <motion.div
+            key="toast"
+            initial={{ y: 16, opacity: 0 }}
+            animate={{ y: 0, opacity: 1 }}
+            exit={{ y: 16, opacity: 0 }}
+            layout
+            style={{ willChange: "transform, opacity" }}
+            role="status"
+            aria-live="polite"
+          >
+            {children}
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </MotionConfig>
+  )
+}
+```
+
+* Uses Client Component boundary (App Router), global defaults via `MotionConfig`, transform/opacity for perf, presence for exit, and `layout` for subtle relayout. ([Motion][2])
+
+## Sanity checks
+
+* Does the animation still communicate intent **with reduced motion enabled**? If not, add an alternative (e.g., fade only, or instant state change). ([Motion][9])
+* Are keys stable for dynamic lists using `AnimatePresence`? If not, fix before shipping. ([Motion][5])
+* Did we avoid promoting large Server Components to Client unnecessarily? If we had to, can we push the boundary down? ([Next.js][10])
+
+## Notes & context
+
+* **Framer Motion → Motion**: Motion is the evolution of Framer Motion—same spirit, broader scope (React/JS/Vue) and hybrid engine (WAAPI + JS) for performance. Prefer Motion’s new docs/APIs for greenfield work. ([Motion][11])
+
+**Tooling guardrail**: No extra NPMs are required beyond `motion`. If you add animation-related tooling, ensure CSP compatibility and avoid runtime that conflicts with RSC; document changes in the route’s README. ([Motion][7])
+
+**Retrieval tags**: `react animation`, `motion`, `variants`, `AnimatePresence`, `layoutId`, `MotionConfig`, `reducedMotion`.
+
+[1]: https://motion.dev/docs/react?utm_source=chatgpt.com "Motion for React — Install & first React animation | Motion"
+[2]: https://motion.dev/docs/react-installation?utm_source=chatgpt.com "How to install Motion for React | Motion"
+[3]: https://motion.dev/docs/react-transitions?utm_source=chatgpt.com "React transitions — Configure Motion animations | Motion"
+[4]: https://motion.dev/tutorials/react-variants?utm_source=chatgpt.com "Variants - Motion Tutorial"
+[5]: https://motion.dev/docs/react-animate-presence?utm_source=chatgpt.com "AnimatePresence — React exit animations | Motion"
+[6]: https://motion.dev/docs/react-layout-animations?utm_source=chatgpt.com "Layout Animation — React FLIP & Shared Element | Motion"
+[7]: https://motion.dev/docs/react-motion-config?utm_source=chatgpt.com "MotionConfig — Configure Motion for React | Motion"
+[8]: https://motion.dev/docs/react-motion-component?utm_source=chatgpt.com "React <motion /> component | Motion"
+[9]: https://motion.dev/docs/react-accessibility?utm_source=chatgpt.com "Create accessible animations in React — Guide | Motion"
+[10]: https://nextjs.org/docs/app/getting-started/server-and-client-components?utm_source=chatgpt.com "Getting Started: Server and Client Components | Next.js"
+[11]: https://motion.dev/docs?utm_source=chatgpt.com "Motion Documentation (prev Framer Motion)"

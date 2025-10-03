@@ -1,0 +1,56 @@
+---
+description: Guidelines on over-arching architectural decisions for the API
+globs: ["apps/api/**"]
+alwaysApply: false
+contextPriority: beginning
+relatedRules: ["domain-modeling", "dependencies/fastendpoints-best-practices", "dependencies/dapper-best-practices"]
+keywords: ["layered-architecture", "repository-pattern", "dotnet", "api-design"]
+lastUpdated: "2025-01-03"
+---
+
+# Backend Architecture Canvas
+
+| Section                                             | Purpose / Responsibility                                                                                                                                                  | Examples                                                                                                                                                                                                                                                                                                                                         |
+| --------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **API / Presentation Layer**                        | Entry‐point to system; handles HTTP requests, parsing, routing, authorization; delegates work to lower layers.                                                            | \* Controller actions in ASP.NET Core handling POST /users/register, GET /orders/{id}. <br> \* Validating JWT tokens or session cookies here. <br> \* Returning standardized error responses (e.g. 400, 404, etc.).                                                                                                                              |
+| **Application Layer**                               | Orchestrates business use cases; contains application‐level logic such as Command/Query segregation; defines DTOs and workflows; throws or handles custom exceptions.     | \* “PlaceOrderCommand” handled by MediatR: checking inventory → computing price → sending events. <br> \* Query “GetUserProfile” retrieving data via repositories, mapping to UserProfileDTO. <br> \* DTO classes like `OrderDto`, `UserProfileDto`. <br> \* Custom exceptions: e.g., `InsufficientInventoryException`, `UserNotFoundException`. |
+| **Domain / Core Layer**                             | Pure domain rules; business invariants; domain entities; domain services; interfaces to infrastructure; no external dependencies.                                         | \* Entity classes like `Order`, `Product`, `User` with methods like `Order.AddItem(...)`, ensuring no duplicate items. <br> \* Domain service like `PricingService` that encapsulates discount logic. <br> \* Interfaces like `IOrderRepository` defined here.                                                                                   |
+| **Infrastructure Layer**                            | Implements external systems: persistence, caches, email, file storage, external APIs etc.; repository implementations; adapters; configuration for external dependencies. | \* EF Core implementation of `IOrderRepository` writing to SQL Server. <br> \* EmailSender using SMTP or SendGrid. <br> \* File storage to AWS S3 or Azure Blob. <br> \* Third‐party API client wrappers.                                                                                                                                        |
+| **Generic Repository Pattern**                      | Reduces duplication for basic CRUD; abstracts over data access; can simplify tests.                                                                                       | \* `IGenericRepository<T>` with methods `Add`, `Update`, `Delete`, `GetById`, `ListAll`. <br> \* Using for entities like `Product`, `Category`, `Tag`. <br> \* But not used for complex queries like “top 10 trending products in last 7 days with associated reviews” (too custom).                                                             |
+| **IEnumerable vs IQueryable**                       | Deciding where to execute filtering, projection etc.; whether work is done in‐memory or translated to DB queries; avoiding performance pitfalls.                          | \* Use `IQueryable<Product>` so filtering `Where(p => p.IsActive)` becomes SQL WHERE clause. <br> \* After retrieving a small collection, convert to `IEnumerable<T>` for in‐memory operations (sorting, combining). <br> \* Avoid exposing `IQueryable` across layers where upper layers might unintentionally add inefficient operations.      |
+| **Modern C# Property Patterns**                     | Cleaner null safety; expressive properties; less boilerplate.                                                                                                             | \* Using nullable reference types: `string? Description`. <br> \* Use of `init` only properties for immutable settings: `public string Name { get; init; }`. <br> \* Pattern matching: `if (obj is Person { Age: >= 18 } adult) { ... }`.                                                                                                        |
+| **Records for DTOs**                                | Immutable data transfer; built‐in value equality; concise syntax.                                                                                                         | \* `public record OrderDto(int Id, decimal Total, List<OrderItemDto> Items);` <br> \* Updating versioning: new versions use record inheritance or with‐expressions. <br> \* Use records for request/response contract over classes unless mutability is absolutely needed.                                                                       |
+| **Benchmarking List Slicing**                       | Choosing efficient methods for slicing collections depending on performance needs.                                                                                        | \* `Skip(1000).Take(100)` when paging over large data sets. <br> \* Using C# 8+ ranges: `myList[100..200]`. <br> \* `List<T>.GetRange(100, 100)` for best performance with List backing. <br> \* Benchmark: for very large lists, GetRange may outperform slicing/range due to fewer allocations.                                                |
+| **Lightweight Background Processing with Channels** | Handling background work without external queueing system; thread‐safe producer/consumer patterns; decoupling of request flow.                                            | \* Use `Channel<T>` in ASP.NET Core service. A controller produces work — e.g. “send welcome email” messages queuing into Channel. A `BackgroundService` consumes from the channel and sends email. <br> \* Streaming real‐time notifications to WebSocket via channel.                                                                          |
+| **Dynamic Business Logic with JSON Rule Engines**   | Encapsulating variable business rules in data rather than code; enabling dynamic changes without redeploy.                                                                | \* A JSON file that defines discount rules: e.g. “if cart total > \$100, and user is in segment VIP, discount 10%”. <br> \* Approval workflows: rules like thresholds of amounts, or conditions on customer history. <br> \* Use Microsoft RulesEngine or a custom evaluation engine.                                                            |
+| **HTTP Files vs Swagger**                           | Supporting developer experience (fast dev vs good documentation / contracts).                                                                                             | \* HTTP files (like VS Code HTTP runner or HTTPie scripts) for quick local calls / integration tests. <br> \* Swagger / OpenAPI for generating API docs, client SDKs, validating contract. <br> \* Use HTTP files during development to test endpoints quickly; use Swagger for onboarding, external facing docs.                                |
+
+---
+
+# How These Sections Tie Together for a Maintainable Backend
+
+To avoid sounding like a buzzword generator, here’s how the pieces interlock to produce a system that doesn’t rot, scales, and is easier to evolve (and debug).
+
+1. **Separation of Concerns & Layering**
+   The API/Presentation → Application → Domain → Infrastructure layers enforce boundaries. Changes in infrastructure (e.g. switching database provider or caching mechanism) don’t ripple into domain logic. The domain stays pure. That means fewer side‐effects, easier testing (you can mock infrastructure), clearer reasoning.
+
+2. **Clear Contracts & Data Flow**
+   DTOs, Records, well‐defined exceptions, interfaces—all create “contracts” between layers. When Application expects a `UserDto`, it knows what shape of data it gets. When Domain defines interfaces like `IOrderRepository`, someone else implements it; but the rest of code relies only on the interface. That reduces coupling.
+
+3. **Performance and Efficiency Guardrails**
+   Knowing when to use `IQueryable` vs `IEnumerable`, choosing efficient collection slicing, etc., prevents surprises (e.g. fetching whole tables into memory, or creating many allocations). That contributes to maintainability because performance bugs are often hard to debug if the code is already messy.
+
+4. **Extensibility & Evolvability**
+   Using JSON rule engines means business rules that often change are externalized from the compiled code. Background processing via channels lets you offload work without changing request‐response flows. Generic repositories reduce duplication so adding a new entity is simpler.
+
+5. **Readable, Safe, Clean Code**
+   Modern property patterns, records, pattern matching—all these assist readability, safety (null handling, equality), and reduce boilerplate. That means future devs (including your future self) understand and modify code faster with fewer mistakes.
+
+6. **Good Tooling & Documentation**
+   Swagger / OpenAPI provide clear interface contracts; HTTP files help quick internal testing. Documentation and externalized rules (via JSON) reduce “hidden behavior.” If something’s unexpected, people can inspect rules or API spec rather than diving through unknown bits of code.
+
+7. **Risk Management & Testing**
+   By defining custom exceptions, clear boundaries, and pushing logic into testable layers (Application, Domain), you facilitate unit tests, integration tests, mockable infrastructure. Channels/background services, rule engines, etc., should have test coverage. The cleaner the separation, the easier to test.
+
+8. **Consistent Architectural Decisions**
+   Using generic repository where appropriate, pattern matching, records, etc. keeps things consistent across the codebase. That consistency reduces cognitive load, helps code reviews, and prevents “one‐off solutions” which are often sources of bugs.

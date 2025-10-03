@@ -1,7 +1,11 @@
 ---
-globs: *.sql
-alwaysApply: false
 description: If creating a stored procedure
+globs: ["database/**/R__*.sql"]
+alwaysApply: false
+contextPriority: medium
+relatedRules: ["database/database", "database/migrations"]
+keywords: ["stored-procedures", "crud", "postgres-functions", "sql-server-procedures"]
+lastUpdated: "2025-01-03"
 ---
 
 # Stored Procedures for CRUD — Best Practices (Unified)

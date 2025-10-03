@@ -1,0 +1,146 @@
+---
+description: Guide C# domain modeling and DI choices for maintainable, testable OO design
+globs: ["**/*.cs"]
+alwaysApply: false
+contextPriority: beginning
+relatedRules: ["dependencies/dotnet-best-practices", "general-styling", "api-general-guidelines"]
+keywords: ["domain-model", "di", "solid", "encapsulation", "csharp"]
+lastUpdated: "2025-01-03"
+---
+
+# C# Domain Modeling & DI
+
+## When to apply
+
+Use this rule while editing domain, application, and service-layer C# files (entities, value objects, services, handlers, policies/strategies, repositories) or shaping public APIs and interfaces.
+
+## Do
+
+* **Encapsulation first**
+
+  * Keep fields private; expose behavior via methods/properties.
+  * Prefer immutability for value-like models (records, `init` setters).
+* **Composition over inheritance**
+
+  * Inherit only for true subtype polymorphism with stable contracts.
+  * Mark base members `virtual` only when you intend extensibility.
+* **Interfaces as seams (ISP)**
+
+  * Depend on small, focused interfaces; avoid “god” interfaces.
+  * Wire implementations with DI.
+* **Value semantics where appropriate**
+
+  * For “thing-by-value” types (e.g., `Money`, `Range`), use records.
+  * Implement equality explicitly when needed (`IEquatable<T>`).
+* **SOLID without cargo-culting**
+
+  * **SRP/OCP**: one reason to change; extend via strategies/classes, not `switch` explosions.
+  * **LSP**: subtypes must be substitutable (no “not supported” overrides).
+  * **ISP**: split interfaces by use-site.
+  * **DIP**: code to abstractions; inject dependencies (not factories/singletons).
+* **API shape & visibility**
+
+  * Keep APIs narrow and intention-revealing; method names as verbs.
+  * Avoid boolean “flag” parameters—prefer separate methods.
+  * Restrict surface area: prefer `internal` for non-public extensibility.
+  * Use `sealed` classes by default unless you explicitly support inheritance; if tests need internals, favor `internal` + `InternalsVisibleTo` over widening public APIs.
+  * Prefer properties for data and methods for behavior; keep setters private if mutation isn’t part of the contract.
+* **Polymorphism discipline**
+
+  * Use `virtual`/overrides only where variation is needed.
+  * Document invariants and call order; do **not** call virtuals from constructors.
+  * Prefer Strategy/Policy objects (interfaces + DI) over deep hierarchies.
+* **Dependency Injection (the .NET way)**
+
+  * Use constructor injection for required deps; Options pattern for config.
+  * Choose lifetimes carefully; avoid stateful singletons.
+  * Ensure services are thread-safe for their lifetime (scoped/transient/singleton).
+* **Nullability & contracts**
+
+  * Enable nullable reference types; annotate intent (`string?`) and check at boundaries.
+  * Validate inputs early; throw standard exceptions with actionable messages (`ArgumentNullException`, `ArgumentOutOfRangeException`, etc.).
+* **Collections & mutability**
+
+  * Expose read-only views (`IReadOnlyList<T>`, `IReadOnlyDictionary<,>`).
+  * Copy inputs that must not escape; return new instances instead of sharing internals.
+* **Equality, hashing, ordering**
+
+  * If a type has identity semantics, implement consistent equality (`Equals`, `GetHashCode`, `==`/`!=` where appropriate). Records cover much for value types.
+* **Error handling & invariants**
+
+  * Fail fast on invalid states; keep objects valid after construction.
+  * Prefer domain exceptions over return codes; don’t use exceptions for control flow.
+* **Leverage modern C# features**
+
+  * Use records, pattern matching, and required members to express intent with less boilerplate.
+
+## Don’t
+
+* Don’t overuse inheritance to “share code”; extract helpers or compose services instead.
+* Don’t expose public setters on domain entities that break invariants.
+* Don’t inject `IServiceProvider` or use service locators inside domain types.
+* Don’t rely on static singletons (especially stateful ones).
+* Don’t pass boolean flags to multipurpose methods—split methods instead.
+* Don’t call virtual members from constructors.
+* Don’t leak mutable collections from your types.
+
+## Canonical examples
+
+* **Split boolean flag into explicit methods**
+
+  ```csharp
+  // Avoid
+  void Ship(Order order, bool asGift);
+
+  // Prefer
+  void Ship(Order order);
+  void ShipAsGift(Order order);
+  ```
+* **Prefer Strategy over inheritance for behavior swaps**
+
+  ```csharp
+  public interface IDiscountPolicy { decimal Apply(decimal subtotal); }
+
+  public sealed class HolidayDiscount : IDiscountPolicy { /* ... */ }
+  public sealed class NoDiscount : IDiscountPolicy { /* ... */ }
+
+  public sealed class CheckoutService(IDiscountPolicy policy)
+  {
+      public decimal Total(decimal subtotal) => policy.Apply(subtotal);
+  }
+  ```
+
+## Safety & guardrails
+
+* Never inject `IServiceProvider` into domain types; request explicit dependencies.
+* Avoid stateful singletons; if a singleton is unavoidable, document thread-safety.
+* Match thread-safety to lifetime: singleton ⇒ fully thread-safe; scoped ⇒ no cross-request state.
+* When unsealing a class, document supported extension points and invariants.
+* Use `internal` + `[assembly: InternalsVisibleTo("…Tests")]` for test seams rather than widening public surface.
+
+## Sanity checks (quick pass before commit)
+
+* Encapsulation preserved; no leaking mutable internals; invariants valid post-ctor.
+* Nullable annotations enabled and correct; guard clauses for inputs present.
+* No boolean “flag” parameters; APIs intention-revealing.
+* Classes sealed by default; any `virtual`/inheritance is deliberate and documented.
+* DI lifetimes chosen and justified; no service locator; no `IServiceProvider` in domain code.
+* Equality consistent for identity/value types (tests cover `Equals`/`GetHashCode`).
+
+## See also
+
+* **Project rules**
+
+  * `.cursor/rules/dotnet/coding-conventions.mdc`
+  * `.cursor/rules/testing/xunit.mdc`
+  * `.cursor/rules/architecture/application-boundaries.mdc`
+
+* **External references**
+
+  * Object-Oriented Programming (C#) — Microsoft Learn: [https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/tutorials/oop](https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/tutorials/oop)
+  * Framework Design Guidelines — Microsoft Learn: [https://learn.microsoft.com/en-us/dotnet/standard/design-guidelines/](https://learn.microsoft.com/en-us/dotnet/standard/design-guidelines/)
+  * Dependency Injection Guidelines — Microsoft Learn: [https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection-guidelines](https://learn.microsoft.com/en-us/dotnet/core/extensions/dependency-injection-guidelines)
+  * Dependency Injection in ASP.NET Core — Microsoft Learn: [https://learn.microsoft.com/en-us/aspnet/core/fundamentals/dependency-injection?view=aspnetcore-9.0](https://learn.microsoft.com/en-us/aspnet/core/fundamentals/dependency-injection?view=aspnetcore-9.0)
+  * .NET Coding Conventions — Microsoft Learn: [https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/coding-conventions](https://learn.microsoft.com/en-us/dotnet/csharp/fundamentals/coding-style/coding-conventions)
+  * C# Guide — Microsoft Learn: [https://learn.microsoft.com/en-us/dotnet/csharp/](https://learn.microsoft.com/en-us/dotnet/csharp/)
+  * SOLID Principles in C# — freeCodeCamp: [https://www.freecodecamp.org/news/what-are-the-solid-principles-in-csharp/](https://www.freecodecamp.org/news/what-are-the-solid-principles-in-csharp/)
