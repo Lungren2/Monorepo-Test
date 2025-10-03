@@ -1,4 +1,4 @@
 # Run tests and build to ensure everything is working
 
 echo "Building projects..."
-pnpm build --all
+pnpm build -- --all
