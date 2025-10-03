@@ -18,8 +18,6 @@ const nextConfig: NextConfig = {
   compress: false,
 
   experimental: {
-    // Adopt PPR per-route, not globally
-    ppr: 'incremental',
     // Tree-shake giant libs during import
     optimizePackageImports: [
       // add the ones you actually use; many popular ones are already default-optimized

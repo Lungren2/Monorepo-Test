@@ -29,8 +29,20 @@ If no flags are provided, you'll be prompted to select which applications to bui
   process.exit(0);
 }
 
-// Interactive selection if no flags provided
-if (!flags.api && !flags.web) {
+// Determine what to build based on flags
+let buildApi = false;
+let buildWeb = false;
+
+if (flags.all) {
+  // --all flag: build both
+  buildApi = true;
+  buildWeb = true;
+} else if (flags.api || flags.web) {
+  // Specific flags provided
+  buildApi = flags.api;
+  buildWeb = flags.web;
+} else {
+  // No flags provided - interactive mode
   console.log(`
 🔨 Build Selection
 
@@ -69,13 +81,11 @@ Please select an option (1-4): `);
     }
     rl.close();
   });
-} else {
-  // Use flags if provided
-  const buildApi = flags.api || (!flags.api && !flags.web);
-  const buildWeb = flags.web || (!flags.api && !flags.web);
-  const buildAll = flags.all || (!flags.api && !flags.web && !flags.all);
-  buildApplications(buildApi, buildWeb);
+  return; // Exit early for interactive mode
 }
+
+// Non-interactive mode - build based on flags
+buildApplications(buildApi, buildWeb);
 
 function buildApplications(buildApi, buildWeb) {
   console.log('🔨 Building applications...\n');
@@ -124,28 +134,6 @@ function buildApplications(buildApi, buildWeb) {
       });
     });
     buildPromises.push(webPromise);
-  }
-
-  if (buildAll) {
-    console.log('🔨 Building all applications...');
-    const allPromise = new Promise((resolve, reject) => {
-      const allProcess = spawn('pnpm', ['build'], {
-        cwd: path.join(__dirname, '../apps/all'),
-        stdio: 'inherit',
-        shell: true
-      });
-    });
-
-    allProcess.on('close', (code) => {
-      if (code === 0) {
-        console.log('✅ All builds completed successfully\n');
-        resolve();
-      } else {
-        console.log('❌ All builds failed\n');
-        reject(new Error(`All builds failed with code ${code}`));
-      }
-    });
-    buildPromises.push(allPromise);
   }
 
   // Wait for all builds to complete
