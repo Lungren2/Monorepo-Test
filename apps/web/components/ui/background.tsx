@@ -1,11 +1,7 @@
+'use client';
+
 import React, { useEffect, useMemo, useState } from 'react';
 
-/**
- * OchreBackground component
- * - Provides a reusable background layer with randomized radial gradient spots.
- * - Expects children to be rendered inside.
- * - Works with light/dark mode toggling via `dark` prop.
- */
 export function OchreBackground({ children }: { children?: React.ReactNode }) {
   const cfg = useMemo(
     () => ({
