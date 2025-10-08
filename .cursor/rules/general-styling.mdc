@@ -19,6 +19,17 @@ lastUpdated: "2025-01-03"
 * **File headers**
 
   * Use a short banner comment at the top for agent context and human readability.
+  * **Comment syntax by file type:**
+    - **C-style languages** (C#, TypeScript, JavaScript, Java, C++, Go): Use `/* */` block comments
+    - **YAML files** (GitHub Actions, configs, Docker Compose): Use `#` line comments only
+    - **Shell scripts** (Bash, PowerShell, sh): Use `#` line comments only
+    - **Python files** (.py): Use `#` line comments only
+    - **SQL files** (.sql): Use `--` line comments or `/* */` block comments
+    - **HTML files** (.html): Use `<!-- -->` HTML comments
+    - **CSS files** (.css): Use `/* */` block comments
+    - **JSON files** (.json): No comments allowed (use separate documentation)
+    - **XML files** (.xml): Use `<!-- -->` XML comments
+    - **Markdown files** (.md): Use `<!-- -->` HTML comments for hidden notes
   * Minimal template:
 
     ```ts
@@ -32,6 +43,18 @@ lastUpdated: "2025-01-03"
      * {Key constraints or gotchas}
      * =============================================================================
      */
+    ```
+
+    ```yaml
+    # =============================================================================
+    # CONTEXT: {layer}/{purpose}
+    # PATTERN: {pattern-name}
+    # DEPENDS_ON: {key dependencies}
+    # USED_BY: {common consumers}
+    # -----
+    # {One-line purpose statement}
+    # {Key constraints or gotchas}
+    # =============================================================================
     ```
 
   * **Examples:**
@@ -62,6 +85,54 @@ lastUpdated: "2025-01-03"
      */
     ```
 
+    ```yaml
+    # =============================================================================
+    # CONTEXT: security/static-analysis
+    # PATTERN: codeql-workflow
+    # DEPENDS_ON: github/codeql-action, actions/checkout
+    # USED_BY: GitHub Security tab, PR checks
+    # -----
+    # CodeQL static analysis for vulnerability detection across all branches.
+    # Scans TypeScript/JavaScript (Next.js) and C# (.NET) codebases.
+    # =============================================================================
+    ```
+
+    ```bash
+    # =============================================================================
+    # CONTEXT: infrastructure/scripts
+    # PATTERN: deployment-script
+    # DEPENDS_ON: docker, kubectl
+    # USED_BY: CI/CD pipelines
+    # -----
+    # Automated deployment script for staging environment.
+    # Requires DOCKER_REGISTRY and KUBE_CONFIG environment variables.
+    # =============================================================================
+    ```
+
+    ```sql
+    -- =============================================================================
+    -- CONTEXT: database/migrations
+    -- PATTERN: schema-migration
+    -- DEPENDS_ON: PostgreSQL, Flyway
+    -- USED_BY: Database deployment pipeline
+    -- -----
+    -- Migration to add user authentication tables.
+    -- Includes indexes and constraints for performance and data integrity.
+    -- =============================================================================
+    ```
+
+    ```html
+    <!-- =============================================================================
+         CONTEXT: frontend/components
+         PATTERN: reusable-component
+         DEPENDS_ON: React, TailwindCSS
+         USED_BY: Dashboard pages
+         -----
+         Reusable card component with consistent styling and accessibility.
+         Supports loading states and error handling.
+         ============================================================================= -->
+    ```
+
   * **Note:** Cursor automatically tracks file edit recency; Created/Updated dates are no longer needed.
 * **Code structure**
 
@@ -85,12 +156,17 @@ lastUpdated: "2025-01-03"
   * Any **raw SQL must be parameterized**. Keep complex business logic in stored procedures.
   * Prefer app code that calls a procedure or a parameterized query wrapper (no string concatenation).
 
-## Don’t
+## Don't
 
-* Don’t exceed ~300 lines per file without a clear reason and a refactor plan.
-* Don’t hide APIs behind barrels; make imports explicit and local.
-* Don’t embed complex business logic in ORMs/ad-hoc queries.
-* Don’t build SQL by string concatenation or interpolate untrusted values.
+* Don't exceed ~300 lines per file without a clear reason and a refactor plan.
+* Don't hide APIs behind barrels; make imports explicit and local.
+* Don't embed complex business logic in ORMs/ad-hoc queries.
+* Don't build SQL by string concatenation or interpolate untrusted values.
+* **Don't use C-style `/* */` comments in YAML files** - YAML only supports `#` line comments.
+* **Don't use `/* */` comments in shell scripts** - Use `#` line comments only.
+* **Don't use `/* */` comments in Python files** - Use `#` line comments only.
+* **Don't add comments to JSON files** - JSON doesn't support comments; use separate documentation.
+* **Don't use `#` comments in HTML/CSS** - Use `<!-- -->` for HTML, `/* */` for CSS.
 
 ## Minimal examples
 
