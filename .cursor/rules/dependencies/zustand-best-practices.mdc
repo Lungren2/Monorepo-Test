@@ -1,0 +1,96 @@
+---
+description: Establish disciplined usage of Zustand stores with React 18+, including setup, middleware, selectors, and persistence
+globs: ["**/*store.ts", "**/stores/**/*.ts", "**/*.tsx"]
+alwaysApply: false
+contextPriority: beginning
+relatedRules: ["dependencies/typescript-best-practices", "dependencies/ts-query-best-practices", "dependencies/next/server-first"]
+keywords: ["zustand", "state-management", "react", "typescript", "persistence", "middleware"]
+lastUpdated: "2025-01-03"
+---
+
+# Zustand Store Rules (React 18+)
+
+## When to apply
+- Any file that defines or consumes a Zustand store in React apps (Next.js/App Router included).
+- Especially when adding middleware (`persist`, `devtools`, `subscribeWithSelector`) or optimizing selectors.
+
+## Do
+- **Use React 18+** (v5 requires it; uses native `useSyncExternalStore`). :contentReference[oaicite:0]{index=0}
+- **Prefer small, focused stores**; co-locate by feature and expose a minimal public surface (state + actions).
+- **Type state & actions explicitly** with generics: `create<State>()(...)`. :contentReference[oaicite:1]{index=1}
+- **Select narrowly**: `useStore((s) => s.slice)`; for tuples/objects, wrap the selector with `useShallow` to stabilize references and reduce re-renders. :contentReference[oaicite:2]{index=2}
+- **For granular subscriptions outside React**, compose with `subscribeWithSelector` and (optionally) `shallow`. :contentReference[oaicite:3]{index=3}
+- **Persist intentionally** using `persist` with:
+  - `name` (storage key),
+  - `partialize` (whitelist only what must survive reloads),
+  - `version` + `migrate` for breaking changes,
+  - `createJSONStorage(() => localStorage | AsyncStorage | custom)`. :contentReference[oaicite:4]{index=4}
+- **Enable DevTools** via middleware and install `@redux-devtools/extension`. Use `devtools.cleanup()` in teardown paths (tests, story unmounts). :contentReference[oaicite:5]{index=5}
+- **Use vanilla stores for non-React code** (`createStore` in `zustand/vanilla`) and connect with `useStore` when needed. :contentReference[oaicite:6]{index=6}
+- **For legacy equality props** (custom equality in `create`), migrate to `createWithEqualityFn` if you relied on v4 behavior. :contentReference[oaicite:7]{index=7}
+
+## Don’t
+- **Don’t return new object/array literals** from selectors without stabilizing them (causes renders/loops). Wrap the selector with `useShallow` or select primitives. :contentReference[oaicite:8]{index=8}
+- **Don’t mutate state directly**; always use `set` with functional updates when based on previous state.
+- **Don’t persist everything**; avoid non-serializables (functions, class instances). Use `partialize` and custom `merge` if needed. :contentReference[oaicite:9]{index=9}
+- **Don’t assume async storage acts like sync**; handle hydration timing and UI fallbacks when using AsyncStorage/IndexedDB. :contentReference[oaicite:10]{index=10}
+- **Don’t use React < 18** with v5; upgrade or pin v4 if constrained. :contentReference[oaicite:11]{index=11}
+
+## Minimal example (typed, persisted, devtooled, shallow-safe)
+```ts
+// src/features/cart/cart.store.ts
+import { create } from 'zustand'
+import { persist, createJSONStorage } from 'zustand/middleware'
+import { useShallow } from 'zustand/react/shallow'
+import { devtools } from 'zustand/middleware'
+
+type CartItem = { id: string; qty: number }
+type CartState = {
+  items: Record<string, CartItem>
+  add: (id: string, qty?: number) => void
+  clear: () => void
+}
+
+export const useCartStore = create<CartState>()(
+  devtools(
+    persist(
+      (set, get) => ({
+        items: {},
+        add: (id, qty = 1) =>
+          set((s) => {
+            const current = s.items[id]?.qty ?? 0
+            s.items = { ...s.items, [id]: { id, qty: current + qty } }
+          }),
+        clear: () => set({ items: {} }),
+      }),
+      {
+        name: 'cart:v2',
+        version: 2,
+        partialize: (s) => ({ items: s.items }), // persist data only
+        migrate: async (persisted, version) => {
+          if (version < 2) return { items: Object.fromEntries((persisted.items ?? []).map((x: any) => [x.id, x])) }
+          return persisted
+        },
+        storage: createJSONStorage(() => localStorage),
+      }
+    )
+  )
+)
+
+// In a component: tuple selection stabilized with useShallow
+export const useCartSummary = () =>
+  useCartStore(
+    useShallow((s) => [Object.keys(s.items).length, s.clear])
+  )
+````
+
+Sources: devtools & install note, persist options, useShallow, subscribeWithSelector. ([zustand.docs.pmnd.rs][1])
+
+## Sanity checks
+
+* **Selectors stable?** No inline `{ ... }`/`[ ... ]` without `useShallow`.
+* **Persist scope?** Only serializable, minimal state; set `version` and `migrate`.
+* **DevTools installed?** `@redux-devtools/extension` present in dev environments.
+* **React 18?** App meets v5 baseline.
+
+[1]: https://zustand.docs.pmnd.rs/middlewares/devtools?utm_source=chatgpt.com "devtools - Zustand"

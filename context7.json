@@ -1,0 +1,317 @@
+{
+  "dependancies": {
+    "apps/web": {
+      "@hookform/resolvers": {
+        "version": "5.2.2",
+        "description": "Validation resolvers for React Hook Form",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-accordion": {
+        "version": "1.2.12",
+        "description": "Unstyled, accessible accordion component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-alert-dialog": {
+        "version": "1.1.15",
+        "description": "Unstyled, accessible alert dialog component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-aspect-ratio": {
+        "version": "1.1.7",
+        "description": "Unstyled, accessible aspect ratio component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-avatar": {
+        "version": "1.1.10",
+        "description": "Unstyled, accessible avatar component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-checkbox": {
+        "version": "1.3.3",
+        "description": "Unstyled, accessible checkbox component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-collapsible": {
+        "version": "1.1.12",
+        "description": "Unstyled, accessible collapsible component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-context-menu": {
+        "version": "2.2.16",
+        "description": "Unstyled, accessible context menu component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-dialog": {
+        "version": "1.1.15",
+        "description": "Unstyled, accessible dialog component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-dropdown-menu": {
+        "version": "2.1.16",
+        "description": "Unstyled, accessible dropdown menu component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-hover-card": {
+        "version": "1.1.15",
+        "description": "Unstyled, accessible hover card component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-label": {
+        "version": "2.1.7",
+        "description": "Unstyled, accessible label component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-menubar": {
+        "version": "1.1.16",
+        "description": "Unstyled, accessible menubar component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-navigation-menu": {
+        "version": "1.2.14",
+        "description": "Unstyled, accessible navigation menu component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-popover": {
+        "version": "1.1.15",
+        "description": "Unstyled, accessible popover component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-progress": {
+        "version": "1.1.7",
+        "description": "Unstyled, accessible progress component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-radio-group": {
+        "version": "1.3.8",
+        "description": "Unstyled, accessible radio group component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-scroll-area": {
+        "version": "1.2.10",
+        "description": "Unstyled, accessible scroll area component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-select": {
+        "version": "2.2.6",
+        "description": "Unstyled, accessible select component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-separator": {
+        "version": "1.1.7",
+        "description": "Unstyled, accessible separator component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-slider": {
+        "version": "1.3.6",
+        "description": "Unstyled, accessible slider component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-slot": {
+        "version": "1.2.3",
+        "description": "Unstyled, accessible slot component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-switch": {
+        "version": "1.2.6",
+        "description": "Unstyled, accessible switch component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-tabs": {
+        "version": "1.1.13",
+        "description": "Unstyled, accessible tabs component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-toggle": {
+        "version": "1.1.10",
+        "description": "Unstyled, accessible toggle component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-toggle-group": {
+        "version": "1.1.11",
+        "description": "Unstyled, accessible toggle group component",
+        "pm": "pnpm"
+      },
+      "@radix-ui/react-tooltip": {
+        "version": "1.2.8",
+        "description": "Unstyled, accessible tooltip component",
+        "pm": "pnpm"
+      },
+      "@tanstack/react-query": {
+        "version": "5.90.2",
+        "description": "Powerful data synchronization for React",
+        "pm": "pnpm"
+      },
+      "@tanstack/react-query-devtools": {
+        "version": "5.90.2",
+        "description": "Developer tools for TanStack Query",
+        "pm": "pnpm"
+      },
+      "class-variance-authority": {
+        "version": "0.7.1",
+        "description": "Create type-safe variant APIs with CVA, cva and the styled-system",
+        "pm": "pnpm"
+      },
+      "clsx": {
+        "version": "2.1.1",
+        "description": "A tiny utility for constructing className strings conditionally",
+        "pm": "pnpm"
+      },
+      "cmdk": {
+        "version": "1.1.1",
+        "description": "Fast, unstyled command menu component for React",
+        "pm": "pnpm"
+      },
+      "date-fns": {
+        "version": "4.1.0",
+        "description": "Modern JavaScript date utility library",
+        "pm": "pnpm"
+      },
+      "embla-carousel-react": {
+        "version": "8.6.0",
+        "description": "React carousel component library",
+        "pm": "pnpm"
+      },
+      "input-otp": {
+        "version": "1.4.2",
+        "description": "One-time password input component for React",
+        "pm": "pnpm"
+      },
+      "lucide-react": {
+        "version": "0.544.0",
+        "description": "Beautiful & consistent icon toolkit made by the community",
+        "pm": "pnpm"
+      },
+      "motion": {
+        "version": "12.23.22",
+        "description": "Motion library for React animations",
+        "pm": "pnpm"
+      },
+      "next": {
+        "version": "15.5.3",
+        "description": "The React Framework for Production",
+        "pm": "pnpm"
+      },
+      "next-themes": {
+        "version": "0.4.6",
+        "description": "Perfect Next.js dark mode in 2 lines of code",
+        "pm": "pnpm"
+      },
+      "react": {
+        "version": "19.1.0",
+        "description": "A JavaScript library for building user interfaces",
+        "pm": "pnpm"
+      },
+      "react-day-picker": {
+        "version": "9.11.0",
+        "description": "Date picker component for React",
+        "pm": "pnpm"
+      },
+      "react-dom": {
+        "version": "19.1.0",
+        "description": "React package for working with the DOM",
+        "pm": "pnpm"
+      },
+      "react-hook-form": {
+        "version": "7.64.0",
+        "description": "Performant, flexible and extensible forms with easy validation",
+        "pm": "pnpm"
+      },
+      "react-resizable-panels": {
+        "version": "3.0.6",
+        "description": "Resizable panel group components for React",
+        "pm": "pnpm"
+      },
+      "recharts": {
+        "version": "2.15.4",
+        "description": "Redefined chart library built with React and D3",
+        "pm": "pnpm"
+      },
+      "sonner": {
+        "version": "2.0.7",
+        "description": "Toast notifications for React",
+        "pm": "pnpm"
+      },
+      "tailwind-merge": {
+        "version": "3.3.1",
+        "description": "Merge Tailwind CSS classes without style conflicts",
+        "pm": "pnpm"
+      },
+      "tailwindcss-animate": {
+        "version": "1.0.7",
+        "description": "Tailwind CSS animations and transitions",
+        "pm": "pnpm"
+      },
+      "vaul": {
+        "version": "1.1.2",
+        "description": "Unstyled drawer/modal component for React",
+        "pm": "pnpm"
+      },
+      "zod": {
+        "version": "4.1.11",
+        "description": "TypeScript-first schema validation with static type inference",
+        "pm": "pnpm"
+      },
+      "zustand": {
+        "version": "5.0.8",
+        "description": "A small, fast and scalable bearbones state-management solution",
+        "pm": "pnpm"
+      }
+    },
+    "apps/api": {
+      "Dapper": {
+        "version": "2.1.66",
+        "description": "A simple object mapper for .NET",
+        "pm": ".net/nuget"
+      },
+      "FastEndpoints": {
+        "version": "7.0.1",
+        "description": "A light-weight REST API framework for .NET",
+        "pm": ".net/nuget"
+      },
+      "FastEndpoints.Swagger": {
+        "version": "7.0.1",
+        "description": "Swagger integration for FastEndpoints",
+        "pm": ".net/nuget"
+      },
+      "Microsoft.AspNetCore.OpenApi": {
+        "version": "9.0.8",
+        "description": "OpenAPI support for ASP.NET Core",
+        "pm": ".net/nuget"
+      },
+      "Npgsql": {
+        "version": "9.0.3",
+        "description": "PostgreSQL database provider for .NET",
+        "pm": ".net/nuget"
+      },
+      "NSwag.AspNetCore": {
+        "version": "14.6.0",
+        "description": "Swagger/OpenAPI toolchain for .NET",
+        "pm": ".net/nuget"
+      },
+      "NSwag.MSBuild": {
+        "version": "14.6.0",
+        "description": "MSBuild integration for NSwag",
+        "pm": ".net/nuget"
+      },
+      "Scalar.AspNetCore": {
+        "version": "2.8.8",
+        "description": "Scalar API documentation for ASP.NET Core",
+        "pm": ".net/nuget"
+      },
+      "Serilog.AspNetCore": {
+        "version": "9.0.0",
+        "description": "Serilog logging for ASP.NET Core",
+        "pm": ".net/nuget"
+      },
+      "Serilog.Sinks.Seq": {
+        "version": "9.0.0",
+        "description": "Seq sink for Serilog structured logging",
+        "pm": ".net/nuget"
+      }
+    }
+  },
+  "meta": {
+    "date updated": "2025-01-27",
+    "number of dependancies": "50"
+  }
+}

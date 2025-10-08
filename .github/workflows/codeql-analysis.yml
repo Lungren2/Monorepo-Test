@@ -1,0 +1,100 @@
+# =============================================================================
+# CONTEXT: security/static-analysis
+# PATTERN: codeql-workflow
+# DEPENDS_ON: github/codeql-action, actions/checkout
+# USED_BY: GitHub Security tab, PR checks
+# -----
+# CodeQL static analysis for vulnerability detection across all branches.
+# Scans TypeScript/JavaScript (Next.js) and C# (.NET) codebases.
+# =============================================================================
+
+name: "CodeQL Analysis"
+
+on:
+  push:
+    branches: ['*']  # Scan all branches on push
+  pull_request:
+    branches: ['*']  # Scan all PRs to any branch
+  schedule:
+    - cron: '20 14 * * 1'  # Weekly scan every Monday at 14:20 UTC
+  workflow_dispatch:  # Allow manual triggering
+
+jobs:
+  analyze:
+    name: Analyze
+    runs-on: ubuntu-latest
+    permissions:
+      actions: read
+      contents: read
+      security-events: write
+      pull-requests: read
+
+    strategy:
+      fail-fast: false
+      matrix:
+        # Include both languages found in your monorepo
+        language: ['javascript-typescript', 'csharp']
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          # Fetch full history for better analysis
+          fetch-depth: 0
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: ${{ matrix.language }}
+          # Configure queries for comprehensive scanning
+          queries: security-and-quality
+
+      # Build step for C# projects (required for CodeQL analysis)
+      - name: Build .NET project
+        if: matrix.language == 'csharp'
+        run: |
+          # Install .NET SDK
+          curl -sSL https://dot.net/v1/dotnet-install.sh | bash /dev/stdin --channel 8.0
+          export PATH="$HOME/.dotnet:$PATH"
+          
+          # Restore and build the API project
+          dotnet restore apps/api/api.csproj
+          dotnet build apps/api/api.csproj -c Release --no-restore
+
+      # Build step for JavaScript/TypeScript projects
+      - name: Build Next.js project
+        if: matrix.language == 'javascript-typescript'
+        run: |
+          # Install Node.js dependencies
+          cd apps/web
+          npm ci --ignore-scripts
+          
+          # Build the Next.js project
+          npm run build
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:${{matrix.language}}"
+          # Upload results to GitHub Security tab
+          upload: true
+
+  # Additional job for dependency scanning
+  dependency-review:
+    name: Dependency Review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          # Fail on high/critical vulnerabilities
+          fail-on-severity: moderate
+          # Include transitive dependencies
+          include-transitive: true

@@ -1,0 +1,134 @@
+---
+description: Configure Serilog → Seq sink with a single default appsettings.json for .NET APIs
+globs: ["**/appsettings*.json", "**/Program.cs", "**/*.csproj"]
+alwaysApply: false
+contextPriority: beginning
+relatedRules: ["dependencies/dotnet-best-practices", "dependencies/npgsql-best-practices", "dependencies/dapper-best-practices"]
+keywords: ["serilog", "logging", "seq", "structured-logging", "dotnet", "observability"]
+lastUpdated: "2025-01-03"
+---
+
+# Serilog → Seq (Single-Env) Configuration
+
+## When to apply
+- Adding/maintaining Serilog logging to **Seq** in APIs that only use a single `appsettings.json` (no per-env config files).
+
+## Do
+- Reference `Serilog.AspNetCore` and `Serilog.Sinks.Seq` in the API project.
+- Keep all sink settings in the **single** `appsettings.json`. Use secrets/env vars for tokens and server URL overrides.
+- Use **structured** logs and `UseSerilogRequestLogging()` for HTTP request spans.
+- Enrich with `FromLogContext`, correlation/request IDs, and service metadata.
+- Prefer **non-fatal** behavior on Seq outages (app keeps running); surface issues via `SelfLog`.
+- Cap noise: set global minimum level sensibly and raise sink level for chatty namespaces with `MinimumLevel.Override`.
+- Consider **durable** shipping (buffer to disk) for production-like reliability and backpressure.
+
+## Don’t
+- Don’t hardcode the Seq API key or URL; inject via configuration (`SEQ__ApiKey`, `SEQ__ServerUrl`) or User-Secrets in dev.
+- Don’t log PII/secrets; implement redaction policies before events leave the process.
+- Don’t block requests on logging; keep batching and payload limits reasonable.
+
+## Minimal, canonical setup
+
+**.csproj**
+```xml
+<ItemGroup>
+  <PackageReference Include="Serilog.AspNetCore" Version="*" />
+  <PackageReference Include="Serilog.Sinks.Seq" Version="*" />
+  <PackageReference Include="Serilog.Enrichers.Environment" Version="*" />
+  <PackageReference Include="Serilog.Enrichers.Process" Version="*" />
+  <PackageReference Include="Serilog.Enrichers.Thread" Version="*" />
+</ItemGroup>
+````
+
+**Program.cs**
+
+```csharp
+using Serilog;
+using Serilog.Events;
+
+var builder = WebApplication.CreateBuilder(args);
+
+// Bind Serilog from configuration first.
+Log.Logger = new LoggerConfiguration()
+    .ReadFrom.Configuration(builder.Configuration)
+    .Enrich.FromLogContext()
+    .CreateLogger();
+
+builder.Host.UseSerilog();
+
+var app = builder.Build();
+
+// adds HTTP request logging with minimal noise
+app.UseSerilogRequestLogging();
+
+app.MapGet("/health", () => "OK");
+app.Run();
+
+// Ensure any buffered logs flush on shutdown
+Log.CloseAndFlush();
+```
+
+**appsettings.json** (single default file)
+
+```json
+{
+  "Serilog": {
+    "Using": [ "Serilog.Sinks.Seq" ],
+    "MinimumLevel": {
+      "Default": "Information",
+      "Override": {
+        "Microsoft": "Warning",
+        "System": "Warning"
+      }
+    },
+    "Enrich": [ "FromLogContext", "WithMachineName", "WithProcessId", "WithThreadId" ],
+    "Properties": {
+      "Service": "MyApi",
+      "Environment": "Default"
+    },
+    "WriteTo": [
+      {
+        "Name": "Seq",
+        "Args": {
+          "serverUrl": "%SEQ__ServerUrl%",
+          "apiKey": "%SEQ__ApiKey%",
+          "controlLevelSwitch": null,
+          "restrictedToMinimumLevel": "Information",
+          "batchPostingLimit": 100,
+          "period": "00:00:02",
+          "queueLimit": 10000,
+          "eventBodyLimitBytes": 262144,
+          "compact": true,
+          "bufferBaseFilename": "Logs/seq-buffer"  // enables durable mode
+        }
+      }
+    ]
+  }
+}
+```
+
+> **Config inputs**
+>
+> * Prefer environment variables or user-secrets: `SEQ__ServerUrl=http://localhost:5341`, `SEQ__ApiKey=...`
+> * Keep the single `appsettings.json` authoritative; avoid `appsettings.*.json` files.
+
+## Guardrails
+
+* **Secrets**: Only read API keys from env/secrets; never commit test keys. Add a CI check to fail builds if `apiKey` is a literal.
+* **Outage resilience**: With durable mode (`bufferBaseFilename`), logs persist locally when Seq is down; ensure the directory is writable and rotated.
+* **Throughput**: Tune `batchPostingLimit`, `period`, and `queueLimit` based on traffic; prefer small periods over massive batches for timely indexing.
+* **Payload safety**: Set `eventBodyLimitBytes` to prevent oversized events; trim/flatten large objects before logging.
+* **Privacy**: Centralize redaction helpers (e.g., `Log.ForContext("UserEmail", Redact(email))`).
+
+## Sanity checks
+
+* Does the API run and continue operating if Seq is unreachable? (Intentionally stop Seq and verify.)
+* Are correlation IDs present across a request’s logs?
+* Are no secrets present in Seq events? Sample a few in the UI.
+* Is the buffer directory being pruned and not growing unbounded?
+
+## See also
+
+* `serilog.mdc` (base usage and structured logging patterns)
+* `npgsql.mdc` (DB error logging conventions)
+* `dapper.mdc` (query parameter logging & redaction)

@@ -1,0 +1,88 @@
+---
+description: Apply TanStack Query's "Important Defaults" with sane project-wide configuration and usage heuristics
+globs: ["**/*.ts", "**/*.tsx"]
+alwaysApply: false
+contextPriority: beginning
+relatedRules: ["dependencies/axios-best-practices", "dependencies/next/self-hosted", "dependencies/typescript-best-practices"]
+keywords: ["tanstack-query", "react-query", "server-state", "caching", "react", "typescript"]
+lastUpdated: "2025-01-03"
+---
+
+# TanStack Query: Important Defaults & Setup
+
+## When to apply
+- Any React/Next.js code that uses `@tanstack/react-query` for server-state fetching, caching, invalidation, or mutations.
+
+## Configuration prerequisites
+- **Single `QueryClient` with project defaults**. Create exactly one client and pass it via `<QueryClientProvider>`. Centralize **defaultOptions.queries** to tune behavior instead of per-hook overrides. :contentReference[oaicite:0]{index=0}
+- **Set freshness & cache policy up-front**:
+  - `staleTime`: Data is **stale by default**; declare a non-zero stale window for resources that don’t need instant refetch (e.g., 2 minutes), or use `Infinity` for long-lived lists, or `'static'` to never refetch (even on invalidation). :contentReference[oaicite:1]{index=1}
+  - `gcTime` (cache GC): Inactive queries are kept for **5 minutes** by default; raise/lower based on UX & memory constraints. :contentReference[oaicite:2]{index=2}
+- **Refetch triggers**: Be explicit about `refetchOnMount`, `refetchOnWindowFocus`, `refetchOnReconnect`, and any `refetchInterval` you rely on, rather than assuming defaults. :contentReference[oaicite:3]{index=3}
+- **Retries**: Queries retry **3 times with exponential backoff** by default. Adjust `retry`/`retryDelay` if APIs have strict rate limits or transactional semantics. :contentReference[oaicite:4]{index=4}
+- **Structural sharing**: Enabled by default for JSON-compatible values; leave on unless you’ve profiled issues with very large payloads or non-JSON data, then tune/disable via `config.structuralSharing`. :contentReference[oaicite:5]{index=5}
+
+### Minimal canonical setup
+```ts
+// queryClient.ts
+import { QueryClient } from '@tanstack/react-query'
+
+export const queryClient = new QueryClient({
+  defaultOptions: {
+    queries: {
+      staleTime: 2 * 60 * 1000,         // 2 minutes
+      gcTime: 5 * 60 * 1000,            // default; document intent
+      refetchOnWindowFocus: true,       // be explicit
+      refetchOnReconnect: true,
+      retry: 3,
+    },
+  },
+})
+````
+
+```tsx
+// app root
+import { QueryClientProvider } from '@tanstack/react-query'
+import { queryClient } from './queryClient'
+
+export function App() {
+  return (
+    <QueryClientProvider client={queryClient}>
+      <YourRoutes />
+    </QueryClientProvider>
+  )
+}
+```
+
+(Uses a single client and centralized defaults.) ([tanstack.com][1])
+
+## Do
+
+* **Co-locate & key well**: Keep query hooks near usage or in a `queries/` module; use stable, array-based keys. (See keys rule in your repo if present.)
+* **Tune freshness per resource**: Long-lived reference data → high/`Infinity` staleTime; highly volatile data → low/zero staleTime with explicit refetch triggers. ([tanstack.com][2])
+* **Prefer invalidation** after mutations over manual cache writes; let background refetch honor your defaults. (See “Invalidation from Mutations” in docs.) ([tanstack.com][2])
+* **Control refetch noise**: For screens with many observers, rely on `staleTime` and targeted `refetchOn*` to avoid thundering herds when windows refocus/reconnect. ([tanstack.com][2])
+* **Document non-defaults**: If you customize `gcTime`, retries, or structural sharing, capture rationale in `queryClient.ts`. ([tanstack.com][2])
+* **Use a default query function** only if endpoints are uniform; otherwise keep explicit `queryFn`s for clarity. ([tanstack.com][1])
+
+## Don’t
+
+* **Don’t scatter per-hook overrides** for `staleTime`/`retry` unless a component truly needs it—prefer client defaults to keep behavior predictable. ([tanstack.com][1])
+* **Don’t rely on implicit refetch points**; if your UX depends on focus/reconnect or intervals, set them explicitly and test them. ([tanstack.com][2])
+* **Don’t disable structural sharing** without evidence; it improves perf and reference stability for free with JSON-compatible data. ([tanstack.com][2])
+* **Don’t create multiple QueryClients** per app tree; it fragments cache & wastes network. ([tanstack.com][1])
+
+## Sanity checks
+
+* Can I explain why this screen’s `staleTime` is what it is?
+* If I close the tab and return after N minutes, do GC + refetch behavior match expectations?
+* Do retries/backoff align with API rate limits and idempotency?
+
+## See also
+
+* `.cursor/rules/axios.mdc` (HTTP client policies & interceptors)
+* `.cursor/rules/nextjs-self-hosted.mdc` (SSR/streaming & hydration)
+* Official docs: **Important Defaults**, **Default Query Function**, **Query Options**. ([tanstack.com][2])
+
+[1]: https://tanstack.com/query/v5/docs/framework/react/guides/default-query-function?utm_source=chatgpt.com "Default Query Function | TanStack Query React Docs"
+[2]: https://tanstack.com/query/v5/docs/react/guides/important-defaults "Important Defaults | TanStack Query React Docs"
