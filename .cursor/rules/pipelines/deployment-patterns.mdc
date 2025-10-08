@@ -1,10 +1,10 @@
 ---
-description: Decision framework for authentication architecture in IIS + Next.js + .NET deployments
-globs: []
+description: Decision framework for deployment architecture in IIS + Next.js + .NET deployments
+globs: ["**/web.config", "**/Program.cs", "**/appsettings*.json", "**/next.config.*"]
 alwaysApply: false
 contextPriority: high
-relatedRules: ["security/authorization", "security/header-configurations", "api-general-guidelines", "dependencies/next/self-hosted"]
-keywords: ["authentication", "iis", "bff", "jwt", "cors", "session-cookies"]
+relatedRules: ["security/authentication", "security/authorization", "security/header-configurations", "api-general-guidelines", "dependencies/next/self-hosted"]
+keywords: ["deployment", "iis", "bff", "jwt", "cors", "session-cookies", "nextjs", "dotnet"]
 lastUpdated: "2025-01-03"
 ---
 
@@ -12,7 +12,7 @@ lastUpdated: "2025-01-03"
 
 ## When to apply
 
-Use this rule when **planning authentication architecture** for a new project or reviewing deployment patterns for an existing one.
+Use this rule when **planning deployment architecture** for a new project or reviewing deployment patterns for an existing one.
 
 ## Core Deployment Patterns
 
@@ -225,15 +225,6 @@ START: Planning authentication architecture
 └─ RESULT: Choose pattern and document decision
 ```
 
-## Authentication Mechanism Comparison
-
-| Mechanism | Best For | Storage | Revocation | Complexity |
-|-----------|----------|---------|------------|------------|
-| **Session Cookies** | Same-origin, BFF | Server-side session store | Immediate (delete session) | Medium |
-| **JWT (short-lived)** | Stateless, multi-client | Client stores token | Delayed until expiry | Low |
-| **JWT + Refresh Token** | Balance stateless + control | httpOnly cookie for refresh | Medium (revoke refresh token) | Medium-High |
-| **Hybrid (Cookies + JWT)** | Trusted web + public API | Both patterns | Per-mechanism | High |
-
 ## IIS-Specific Optimizations
 
 ### Enable HTTP/3 for Performance
@@ -310,8 +301,6 @@ START: Planning authentication architecture
 - `.cursor/rules/security/authorization.mdc` - Role-based access control patterns
 - `.cursor/rules/security/header-configurations.mdc` - Security headers (CSP, HSTS, etc.)
 - `.cursor/rules/dependencies/next/self-hosted.mdc` - Next.js IIS deployment
-- `AuthResearch.md` - Detailed IIS deployment patterns and configurations
-- `NextFasterExample.md` - Performance optimization for IIS + Next.js
 
 ## Testing Patterns
 

@@ -1,0 +1,33 @@
+---
+description: Enforce best practices when using the Polly NuGet package for resilience and transient fault handling
+globs: ["**/*.csproj", "**/*.cs"]
+alwaysApply: false
+contextPriority: beginning
+relatedRules: ["dependencies/dotnet-best-practices", "dependencies/dapper-best-practices", "dependencies/npgsql-best-practices"]
+keywords: ["polly", "resilience", "retry", "circuit-breaker", "timeout", "fallback", "dotnet"]
+lastUpdated: "2025-01-03"
+---
+
+# Polly Usage Guidelines
+
+## When to apply
+- When adding retry, circuit breaker, fallback, timeout, or bulkhead logic to .NET services.
+- When handling transient faults from external dependencies (HTTP, databases, message brokers).
+
+## Do
+- Centralize policies in a **policy registry** or DI container instead of scattering them inline.
+- Use **typed policies** (`Policy<HttpResponseMessage>`, etc.) to avoid silent type mismatches.
+- Tailor retry counts and delays with **jitter** (`WaitAndRetry` with `TimeSpan` + randomization) to prevent thundering herd effects.
+- Combine policies (e.g. **retry + circuit breaker**) with `PolicyWrap` for layered resilience.
+- Log policy outcomes (`onRetry`, `onBreak`, `onFallback`) to aid observability.
+- Use cancellation tokens in timeouts and bulkheads to allow graceful degradation.
+
+## Don’t
+- Don’t blanket-wrap every call—apply Polly only to operations that benefit from resilience patterns.
+- Don’t retry non-idempotent operations without explicit safeguards.
+- Don’t swallow exceptions silently in fallbacks; at minimum log or surface them for monitoring.
+- Don’t overload with high retry counts or long delays—tune for realistic recovery windows.
+
+## See also
+- `.cursor/rules/dapper.mdc` for guidance on data access (resilience policies can apply to DB as well as HTTP).
+- `.cursor/rules/github-actions.mdc` for CI/CD pipeline safeguards that parallel runtime resilience.

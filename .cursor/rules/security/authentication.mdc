@@ -1,0 +1,81 @@
+---
+description: Make principled, mix-and-match authentication choices per scenario with clear selection heuristics and composition patterns
+globs: ["src/**/auth/**/*", "src/**/security/**/*", "**/*auth*.md", "**/bff/**/*"]
+alwaysApply: false
+contextPriority: high
+relatedRules: ["security/authorization", "security/header-configurations", "pipelines/deployment-patterns"]
+keywords: ["authentication", "jwt", "oauth2", "oidc", "session-cookies", "bff", "mtls", "hmac"]
+lastUpdated: "2025-01-03"
+---
+
+# Authentication Decision & Composition
+
+## When to apply
+- You’re adding or refactoring login/session, API protection, or inter-service auth.
+- You need to decide **which** pattern (Session, JWT, OAuth2/OIDC, BFF, mTLS, HMAC) or **how to combine** them cleanly.
+
+## Quick Decision Heuristics (pick the spine, then add layers)
+- **Is the primary client a browser SPA/mobile app?**  
+  → Start with **BFF + server session cookie**. Keep access tokens server-side.
+- **Is the API fabric distributed/microservices?**  
+  → Use **short-lived JWTs** **between services**; terminate user auth at the edge (BFF/API gateway).
+- **Is identity federated (SAML/Google/Azure AD) or cross-org delegation needed?**  
+  → Use **OAuth2 + OIDC** to *acquire* identity/tokens; still apply BFF/sessions for browsers.
+- **Is this machine-to-machine on trusted networks or high assurance?**  
+  → **mTLS** for transport-level identity; optionally add **JWT** inside for scoped authZ.
+- **Is this a webhook or payment callback?**  
+  → **HMAC** signatures per message; rotate secrets and verify timestamps.
+- **Is the app server-rendered or an internal admin tool?**  
+  → **HTTP-only, Secure, SameSite session cookies** with central session store.
+
+## Composition Patterns (mix & match, minimal coupling)
+- **SPA/mobile ↔ BFF ↔ APIs**
+  - Browser ↔ **BFF**: Session cookie (HTTP-only, SameSite=Lax/Strict, CSRF token).
+  - BFF ↔ **Auth Server**: OAuth2 Authorization Code + **PKCE** to obtain tokens **server-side**.
+  - BFF ↔ **Downstream APIs**: **Access token (JWT)** with **≤15 min TTL** + **refresh** held by BFF only.
+- **API Gateway ↔ Microservices**
+  - Edge validates **JWT** (issued by central AS) and injects **scopes/claims**; services trust gateway public keys.
+  - **mTLS** between gateway and services in sensitive zones; optional **service-JWT** for fine-grained authZ.
+- **Partners & Webhooks**
+  - Outbound: Sign payloads with **HMAC(secret, body)** + timestamp + replay window.
+  - Inbound: Require **mTLS** for partner → gateway, plus HMAC on message for double assurance.
+- **Background jobs / Cron**
+  - Use **Client Credentials** flow to mint **scoped, short-lived JWTs**; never reuse user tokens.
+
+## Token & Session Hygiene (minimal but mandatory)
+- **JWTs**: Access ≤15m, Refresh ≤7–30d, **kid** header + JWKS rotation. Avoid custom heavy claims; prefer **opaque IDs** + lookup.
+- **Sessions**: Server store (Redis) with idle + absolute timeouts; rotate session ID on privilege change/login.
+- **Revocation**: Event-driven denylist for high-risk scopes; otherwise rely on short TTL + key rotation.
+- **Storage**: No tokens in `localStorage`; browser never sees access tokens in BFF pattern.
+
+## Do
+- Centralize trust: one **Authorization Server (AS)** issues tokens/keys; publish JWKS.
+- Enforce TLS everywhere; pin **minimum TLS** version and cipher policy.
+- Implement CSRF defenses for cookie flows; use same-site + double-submit token.
+- Scope everything: least-privilege **scopes/roles**; validate **audience** and **issuer**.
+- Log auth decisions (who/what/why), not secrets. Sample logs; redact tokens.
+
+## Don’t
+- Don’t use OAuth2 **without OIDC** for authentication.
+- Don’t let browser JS access refresh tokens or long-lived credentials.
+- Don’t overstuff JWTs; keep them ≤2–4 KB and stable in shape.
+- Don’t rely on the Implicit Flow; prefer **Auth Code + PKCE**.
+
+## Minimal Canonical Scenarios
+- **Public SPA with APIs:** SPA ⇄ **BFF session cookie**; BFF does **Auth Code + PKCE**; BFF calls APIs with **short-lived JWT**.  
+- **Internal microservices:** Gateway validates **JWT**; gateway ⇄ services over **mTLS**; services check scopes.  
+- **Third-party “Sign in with …”:** **OIDC** at BFF; exchange code server-side; maintain **server session**; no tokens to browser.  
+- **Webhook receiver:** Require **mTLS** from sender; verify **HMAC** on body; enforce **±5 min** clock skew; idempotency keys.
+
+## Sanity checks (self-review before merge)
+- ✅ Clear **trust boundaries**: which hop uses cookies vs tokens vs mTLS?  
+- ✅ **TTL**s and rotation set (keys, tokens, sessions).  
+- ✅ **Revocation** story proportional to risk (denylist or fast TTL).  
+- ✅ **Aud/iss/exp/nbf** verified; clock skew handled.  
+- ✅ Threats addressed: CSRF (cookies), XSS (no token in JS), replay (HMAC+timestamp), MITM (TLS/mTLS).
+
+## See also
+- `docs/authentication-patterns.md` (deep dive rationale & trade-offs)
+- `.cursor/rules/security/tokens.mdc` (token lifecycle, rotation, revocation)
+- `.cursor/rules/network/mtls.mdc` (certificate issuance, SNI, rotation)
+- `.cursor/rules/web/csrf.mdc` (cookie CSRF hardening)

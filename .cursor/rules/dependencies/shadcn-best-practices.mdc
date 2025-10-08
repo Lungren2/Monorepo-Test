@@ -1,0 +1,47 @@
+---
+description: Apply consistent usage of shadcn/ui components in React projects
+globs: ["**/*.tsx", "**/*.ts"]
+alwaysApply: false
+contextPriority: beginning
+relatedRules: ["dependencies/motion-best-practices", "dependencies/tailwind-best-practices", "dependencies/typescript-best-practices"]
+keywords: ["shadcn", "ui", "components", "react", "accessibility", "tailwind"]
+lastUpdated: "2025-01-03"
+---
+
+# shadcn/ui Usage
+
+## When to apply
+- Whenever building React components in our project that require UI primitives or styled widgets.
+
+## Do
+- Use shadcn/ui components as **first choice** for UI primitives (buttons, inputs, cards, modals, etc.) before creating custom ones.  
+- Compose and extend components with Tailwind utilities rather than overriding deeply.  
+- Keep them **accessible by default** (respect ARIA roles, labels, keyboard interactions).  
+- Import directly from `@/components/ui/*` instead of creating barrel exports.  
+- Prefer controlled components for form inputs; integrate with React Hook Form where applicable.  
+- Align to project-wide design tokens (spacing, colors, typography) when customizing.
+
+## Don’t
+- Don’t fork or duplicate shadcn/ui components without clear reason; extend via props or composition.  
+- Don’t apply inline styles if Tailwind or shadcn props already solve it.  
+- Don’t add animations or transitions without checking accessibility (`prefers-reduced-motion`).  
+
+## See also
+- `.cursor/rules/motion.mdc` (for motion/animation guidelines)  
+- `.cursor/rules/style-and-structure.mdc` (for overall project structure and style consistency)
+
+## Example
+```tsx
+import { Button } from "@/components/ui/button"
+
+export function SaveAction() {
+  return <Button variant="default">Save</Button>
+}
+````
+
+## Sanity checks
+
+* Does the component remain accessible with keyboard navigation and screen readers?
+* Is the styling consistent with other shadcn/ui usage in the project?
+* Could this be achieved by extending an existing shadcn/ui component instead of reinventing?
+

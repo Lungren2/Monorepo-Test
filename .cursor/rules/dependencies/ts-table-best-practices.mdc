@@ -1,0 +1,114 @@
+---
+description: Adopt TanStack Table (v8) with type-safe setup, performant row models, and clear client/server patterns
+globs: ["**/*.ts", "**/*.tsx"]
+alwaysApply: false
+contextPriority: beginning
+relatedRules: ["dependencies/typescript-best-practices", "dependencies/shadcn-best-practices", "dependencies/ts-query-best-practices"]
+keywords: ["tanstack-table", "datagrid", "table", "react", "typescript", "virtualization"]
+lastUpdated: "2025-01-03"
+---
+
+# TanStack Table (v8): Headless Datagrid Rule
+
+## When to apply
+Use for any table/datagrid built with `@tanstack/*-table` (React/Vue/Svelte/etc.). Focus on type-safe column defs, explicit row models, and correct client vs server features.
+
+## Do
+- **Install the right adapter + core**
+  - Use the framework adapter (e.g. `@tanstack/react-table`) and its headless core. :contentReference[oaicite:0]{index=0}
+- **Model your data first**
+  - Define a `Row` TypeScript type and pass generics to `ColumnDef<Row, TValue>`; prefer `createColumnHelper<Row>()`. :contentReference[oaicite:1]{index=1}
+- **Keep references stable**
+  - Memoize or hoist `data`, `columns`, and table options so their identities don’t thrash re-renders. Pass only the row models you actually use (`getCoreRowModel` + `getSortedRowModel`/`getFilteredRowModel`/`getPaginationRowModel`). :contentReference[oaicite:2]{index=2}
+- **Pick a state strategy**
+  - Start uncontrolled. Control only what you need via `state` + `on*Change` (e.g., pagination/filtering) and keep the rest internal. :contentReference[oaicite:3]{index=3}
+- **Server-side mode when data lives on the API**
+  - Enable `manualPagination`, `manualSorting`, `manualFiltering`; keep `pageCount`/`rowCount` and fetch on state changes (debounce filters). :contentReference[oaicite:4]{index=4}
+- **Virtualize large tables**
+  - Use TanStack Virtual (or react-window) for long lists/columns; wire it to the table’s row/column models. :contentReference[oaicite:5]{index=5}
+- **Use accessors intentionally**
+  - Prefer `accessorKey` for simple fields; use `accessorFn` for derived values and supply compatible `sortingFn`/`filterFn` when needed. Add `meta` for formatting hints. :contentReference[oaicite:6]{index=6}
+
+## Don’t
+- Don’t mutate `data` or `columns` between renders (treat as immutable inputs).
+- Don’t enable every row model “just in case” — each model adds work.
+- Don’t fetch on every render; fetch on **state transitions** (sorting/filter/pagination) in controlled modes. :contentReference[oaicite:7]{index=7}
+- Don’t render thousands of DOM rows without virtualization for big datasets. :contentReference[oaicite:8]{index=8}
+
+## Minimal canonical example (React, TS)
+```tsx
+import { useMemo, useState } from "react";
+import {
+  flexRender,
+  getCoreRowModel,
+  getSortedRowModel,
+  getPaginationRowModel,
+  createColumnHelper,
+  useReactTable,
+  type ColumnDef,
+} from "@tanstack/react-table";
+
+type Person = { id: string; firstName: string; age: number };
+
+const columnHelper = createColumnHelper<Person>();
+const columns: ColumnDef<Person, any>[] = [
+  columnHelper.accessor("firstName", { header: "First", cell: i => i.getValue() }),
+  columnHelper.accessor("age", { header: "Age" }),
+];
+
+export default function PeopleTable({ rows }: { rows: Person[] }) {
+  const data = useMemo(() => rows, [rows]);              // stable refs ✅
+  const [sorting, setSorting] = useState([]);
+  const [pagination, setPagination] = useState({ pageIndex: 0, pageSize: 20 });
+
+  const table = useReactTable<Person>({
+    data,
+    columns,
+    state: { sorting, pagination },
+    onSortingChange: setSorting,
+    onPaginationChange: setPagination,
+    getCoreRowModel: getCoreRowModel(),
+    getSortedRowModel: getSortedRowModel(),
+    getPaginationRowModel: getPaginationRowModel(),
+  });
+
+  return (
+    <table>
+      <thead>
+        {table.getHeaderGroups().map(hg => (
+          <tr key={hg.id}>
+            {hg.headers.map(h => (
+              <th key={h.id} onClick={h.column.getToggleSortingHandler()}>
+                {flexRender(h.column.columnDef.header, h.getContext())}
+              </th>
+            ))}
+          </tr>
+        ))}
+      </thead>
+      <tbody>
+        {table.getRowModel().rows.map(r => (
+          <tr key={r.id}>
+            {r.getVisibleCells().map(c => (
+              <td key={c.id}>{flexRender(c.column.columnDef.cell, c.getContext())}</td>
+            ))}
+          </tr>
+        ))}
+      </tbody>
+    </table>
+  );
+}
+````
+
+*For server data, set `manualPagination: true`, `manualSorting: true`, keep `pageCount`, and trigger fetches in `on*Change` handlers.* ([tanstack.com][1])
+
+## Sanity checks
+
+* Columns have stable IDs/keys and `accessorKey/Fn` set. ([tanstack.com][2])
+* Only necessary row models are enabled. ([tanstack.com][3])
+* In server mode, `manual*` flags + URL/search-param sync are wired. ([tanstack.com][1])
+* For big data, virtualization is used and measured. ([tanstack.com][4])
+
+[1]: https://tanstack.com/table/v8/docs/guide/pagination?utm_source=chatgpt.com "Pagination Guide | TanStack Table Docs"
+[2]: https://tanstack.com/table/v8/docs/guide/column-defs?utm_source=chatgpt.com "Columns Guide | TanStack Table Docs"
+[3]: https://tanstack.com/table/v8/docs/guide/tables?utm_source=chatgpt.com "Table Instance Guide | TanStack Table Docs"
+[4]: https://tanstack.com/table/latest/docs/guide/virtualization?utm_source=chatgpt.com "Virtualization Guide | TanStack Table Docs"
